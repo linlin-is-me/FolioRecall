@@ -1,0 +1,24 @@
+# Local environments and configuration
+.venv/
+venv/
+foliorecall_env/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Downloaded inputs and generated artifacts
+data/
+models/
+weights/
+cache/
+.cache/
+outputs/
+indexes/
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.log
