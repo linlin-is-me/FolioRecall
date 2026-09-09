@@ -18,6 +18,8 @@ def metrics(ranked_ids, relevance):
 
 
 def evaluate(model, config, index, pages, queries, qrels):
+    if not queries:
+        raise ValueError("评测查询为空")
     import torch
     from .encoding import encode_queries
     from .search import search
@@ -41,7 +43,7 @@ def evaluate(model, config, index, pages, queries, qrels):
         encode_times.append(encoded - start)
         results.append({"query_id": query_id, "query": query["query"], "ranking": ranked,
                         **metrics([p["page_id"] for p in ranked], relevance)})
-    return {"scope": "HR English 20-query flow check; not full benchmark", "queries": len(results),
+    return {"scope": "early retrieval flow check; not full benchmark", "queries": len(results),
             "candidates": index.ntotal,
             "metrics": {key: float(np.mean([row[key] for row in results])) for key in ("nDCG@10", "Recall@5", "Recall@10")},
             "query_seconds": {f"p{p}": float(np.percentile(timings, p)) for p in (50, 95)},

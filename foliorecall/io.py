@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -28,7 +29,8 @@ def provenance(output, config):
     output.mkdir(parents=True, exist_ok=True)
     def git(*args):
         return subprocess.check_output(["git", *args], text=True).strip()
-    state = {"commit": git("rev-parse", "HEAD"), "status": git("status", "--porcelain"), "config": config}
+    state = {"commit": git("rev-parse", "HEAD"), "status": git("status", "--porcelain"), "config": config,
+             "argv": sys.argv, "python": sys.executable, "cwd": str(Path.cwd())}
     write_json(output / "run.json", state)
     diff = git("diff", "HEAD", "--", ".")
     if diff:

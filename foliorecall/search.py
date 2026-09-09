@@ -18,6 +18,8 @@ def save_index(vectors, rows, config, output):
     if not np.allclose(np.linalg.norm(vectors, axis=1), 1, atol=1e-3):
         raise ValueError("索引向量必须归一化")
     output = Path(output)
+    if (output / "index.faiss").exists():
+        raise ValueError("索引已存在，请使用新输出目录，避免覆盖已关联的页面与模型配置")
     output.mkdir(parents=True, exist_ok=True)
     index = faiss.IndexFlatIP(config["dimension"])
     index.add(vectors)

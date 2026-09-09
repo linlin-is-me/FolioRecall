@@ -56,6 +56,8 @@ def main():
         index, pages = load_index(args.index, config)
     else:
         from .documents import validate_pages
+        if (Path(args.output) / "index.faiss").exists():
+            raise ValueError("索引已存在，请使用新输出目录")
         pages = validate_pages(read_rows(args.pages))
         if not pages:
             raise ValueError("页面清单为空")
@@ -64,6 +66,16 @@ def main():
     model = load_encoder(config)
     if args.command == "index":
         import torch
+        from PIL import Image
+        from .encoding import processing
+        with Image.open(pages[0]["preview"]) as image:
+            features = model.preprocess([image.convert("RGB")], prompt=config["prompt"],
+                                        processing_kwargs=processing(config))
+        probe = {"first_page_id": pages[0]["page_id"], "max_seq_length": model.max_seq_length,
+                 "pooling": model[1].pooling_mode, "input_ids_shape": list(features["input_ids"].shape),
+                 "image_grid_thw": features["image_grid_thw"].tolist()}
+        write_json(Path(args.output) / "encoding-probe.json", probe)
+        del features
         start = time.perf_counter()
         vectors = encode_pages(model, pages, config)
         save_index(vectors, pages, config, args.output)
@@ -84,6 +96,8 @@ def main():
         from .evaluation import evaluate
         data = Path(args.data)
         result = evaluate(model, config, index, pages, read_rows(data / "queries.jsonl"), read_json(data / "qrels.json"))
+        if (data / "source.json").exists():
+            result["dataset"] = read_json(data / "source.json")
         write_json(Path(args.output) / "result.json", result)
         print(json.dumps({k: v for k, v in result.items() if k != "results"}, indent=2))
     return 0

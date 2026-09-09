@@ -23,6 +23,8 @@ def validate_pages(rows):
 
 
 def import_documents(inputs, output, dpi=150, image_manifest=None):
+    if dpi <= 0:
+        raise ValueError("DPI 必须为正")
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     rows, errors = [], []

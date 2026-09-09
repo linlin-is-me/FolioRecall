@@ -31,6 +31,8 @@ def check_split(split, pages):
 
 
 def train_smoke(config, data, output, checkpointing=False):
+    if config["device"] != "cuda" or not torch.cuda.is_available():
+        raise ValueError("当前 train-smoke 需要可用 CUDA；PDF 导入和 CPU 核心检查可继续")
     data, output = Path(data), Path(output)
     output.mkdir(parents=True, exist_ok=True)
     if (output / "adapter").exists():
@@ -38,6 +40,7 @@ def train_smoke(config, data, output, checkpointing=False):
     torch.manual_seed(config["seed"])
     pages, split = read_rows(data / "pages.jsonl"), read_json(data / "split.json")
     check_split(split, pages)
+    write_json(output / "data.json", {"source": read_json(data / "source.json"), "split": split, "pages": pages})
     mapping = {p["page_id"]: p for p in pages}
     provenance(output, dict(config, gradient_checkpointing=checkpointing))
     settings = config["train"]

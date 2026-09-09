@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import random
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -16,6 +18,19 @@ VDR = "llamaindex/vdr-multilingual-train"
 VDR_REV = "6b92b5cae23d44509f1e05d7062befe5ec77f7c9"
 PDFS = ["a_demographic_perspective_on_the_future_of_european-KJ0125152ENN.pdf",
         "employment_and_social_developments_in_europe-KE0125067ENN.pdf"]
+
+
+def read_url(url):
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                return response.read()
+        except OSError as exc:
+            if isinstance(exc, urllib.error.HTTPError) and exc.code not in (429, 500, 502, 503, 504):
+                raise
+            if attempt == 2:
+                raise
+            time.sleep(2 ** attempt)
 
 
 def fetch(repo, revision, filename):
@@ -34,7 +49,7 @@ def prepare_pdfs(output):
             target.symlink_to(cached)
         sources.append(dict(next(row for row in metadata if row["doc_name"] == filename),
                             local_path=str(target.absolute()), revision=HR_REV,
-                            license_url=f"https://huggingface.co/datasets/{HR}#licensing-information"))
+                            license_url=f"https://huggingface.co/datasets/{HR}"))
     write_json(output / "sources.json", sources)
     print(json.dumps(sources, indent=2), flush=True)
 
@@ -106,21 +121,30 @@ def prepare_vdr(output):
     dev_ids = set(ids[:len(ids) // 5])
     chosen = {"train": [], "dev": []}
     used = set()
+    # The viewer serves only a prefix of this large dataset. This tiny prefix is
+    # sufficient for wiring checks; formal training needs source Parquet images.
+    preview_limit = 1000
     for row in metadata:
-        if not row.get("query", "").strip():
+        if row["row_index"] >= preview_limit or not (row.get("query") or "").strip():
             continue
         split = "dev" if row["id"] in dev_ids else "train"
         limit = 4 if split == "dev" else 8
         if len(chosen[split]) >= limit or row["id"] in used:
             continue
-        negatives = [n for n in row["negatives"] if n in mapping and n != row["id"]
+        negatives = [n for n in (row["negatives"] or []) if n in mapping and n != row["id"]
+                     and mapping[n]["row_index"] < preview_limit
                      and (n in dev_ids) == (split == "dev") and n not in used]
         # Prefer nearby provided negatives to keep row-slice retrieval small.
         negatives.sort(key=lambda n: mapping[n]["row_index"])
         if not negatives:
             continue
         negative = negatives[0]
-        chosen[split].append({"query": row["query"], "positive": row["id"], "negative": negative})
+        original = row["negatives"] or []
+        chosen[split].append({"query": row["query"], "positive": row["id"], "negative": negative,
+                              "original_negative_ids": original,
+                              "missing_negative_ids": [n for n in original if n not in mapping],
+                              "excluded_cross_split_ids": [n for n in original if n in mapping
+                                                            and (n in dev_ids) != (split == "dev")]})
         used.update((row["id"], negative))
         if len(chosen["train"]) == 8 and len(chosen["dev"]) == 4:
             break
@@ -133,13 +157,18 @@ def prepare_vdr(output):
         if not target.exists():
             params = urllib.parse.urlencode({"dataset": VDR, "config": "en", "split": "train",
                                             "offset": mapping[pid]["row_index"], "length": 1})
-            with urllib.request.urlopen("https://datasets-server.huggingface.co/rows?" + params, timeout=60) as response:
-                data = json.load(response)
+            data = json.loads(read_url("https://datasets-server.huggingface.co/rows?" + params))
+            if not data.get("rows"):
+                raise ValueError(f"切片服务没有返回页面 {pid}；原始页面未判定缺失")
             remote = data["rows"][0]["row"]
             if remote["id"] != pid or VDR_REV not in remote["image"]["src"]:
                 raise ValueError("切片服务返回的 ID 或 revision 不匹配")
-            with urllib.request.urlopen(remote["image"]["src"], timeout=60) as response:
-                target.write_bytes(response.read())
+            content = read_url(remote["image"]["src"])
+            import io
+            from PIL import Image
+            with Image.open(io.BytesIO(content)) as image:
+                image.verify()
+            target.write_bytes(content)
         pages.append({"page_id": pid, "doc_id": pid, "source": f"https://huggingface.co/datasets/{VDR}",
                       "page_number": 1, "page_number_kind": "standalone_image_not_original_pdf",
                       "preview": str(target.resolve())})
@@ -149,7 +178,7 @@ def prepare_vdr(output):
     write_json(output / "source.json", {"dataset": VDR, "revision": VDR_REV, "seed": 42,
                "split": "page ID; original-document isolation unverified", "metadata_pages": len(mapping),
                "downloaded_pages": len(pages), "queries": 12, "original_negatives_per_query": 1,
-               "selection": "first eligible rows, smoke test only; not representative"})
+               "selection": "eligible records from first 1000 viewer rows, smoke test only; not representative"})
 
 
 if __name__ == "__main__":

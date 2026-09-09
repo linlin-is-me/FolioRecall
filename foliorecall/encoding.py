@@ -35,6 +35,12 @@ def encode(model, inputs, config):
     vectors = np.asarray(vectors, dtype=np.float32)
     if vectors.ndim != 2 or vectors.shape[1] != config["dimension"] or not np.isfinite(vectors).all():
         raise ValueError("模型输出维度或数值异常")
+    if config["normalize"]:
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+        if (norms == 0).any():
+            raise ValueError("模型输出零向量")
+        # BF16 normalization has rounding error; FAISS cosine uses float32 unit vectors.
+        vectors = vectors / norms
     return vectors
 
 
