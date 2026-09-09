@@ -8,7 +8,7 @@ FolioRecall 面向英文视觉文档检索，计划支持 PDF / 页面图像导�
 
 ## 当前状态
 
-2026-09-09：两份 HR 原始 PDF 共 45 页已完成原始模型编码、索引保存加载与命令行查询，固定图表查询 Top-1 命中正确文档和物理第 10 页。HR 完整 1110 页、20 条固定英文查询及 VDR 的 8 条训练、4 条开发查询和 24 张图像已准备并检查。HR 模型评分和 LoRA 反传尚待实测，第一阶段未完成。
+2026-09-09：第一阶段的命令行检索、原始模型评测和小规模训练验证已跑通。两份 HR 原始 PDF 共 45 页完成编码、索引保存加载与查询，固定图表查询 Top-1 命中正确文档和物理第 10 页。HR 完整 1110 页上的 20 条固定英文查询已评分；VDR 的 8 条训练、4 条开发查询完成 4 步 LoRA 训练、适配器重载与独立索引检索。当前结果证明流程可运行，尚无正式训练收益或多领域评测结论；界面未接入。
 
 当前任务、阻塞与下一步统一见[开发计划的当前开发重点](doc/多模态文档检索项目开发计划.md#当前开发重点)。
 
@@ -119,7 +119,7 @@ python -m foliorecall query --index indexes/demo-original 'Which figure compares
 
 45 页建库约 41.4 秒，PyTorch 峰值显存约 4.24 GiB；时间包含页面读取、编码和索引保存，不含模型加载。结构化查询结果见本地 `outputs/demo-query.json`，来源核对见 `outputs/demo-query-check.json`。当前 Sentence Transformers 的图像参数分组为 `image`；修复后两页探测不再出现未知参数警告，实际网格与输入形状保存在 `indexes/probe-original-validated/encoding-probe.json`。模型首次下载曾停顿，使用 aria2 HTTP 续传恢复，现已接回标准 Hugging Face 缓存；aria2 仅用于下载故障恢复，不是应用运行依赖。
 
-下面为待实测的完整 HR 评分与训练命令：
+完整 HR 评分与训练入口：
 
 ```bash
 python -m foliorecall index --pages data/hr/pages.jsonl --output indexes/hr-original
@@ -129,13 +129,22 @@ python -m foliorecall train-smoke --output outputs/train-smoke
 
 默认配置为 `configs/baseline.json`，可用 `--config` 指定配置，查询加 `--json` 输出结构化结果。图像入口使用 `import --image-manifest <JSONL> --output <目录>`；每行提供 `page_id`、`doc_id`、`source`、从 1 开始的 `page_number`、`preview`，预览相对清单目录解析。HR 基准直接使用官方图像，不使用演示 PDF 的重新渲染图像。
 
-首次训练显存不足时，用新的输出目录加 `--gradient-checkpointing` 重试；仍失败则保留 `failure.json`，不将流程检查写成训练成功。训练产物只保存 LoRA，加载时仍需原始模型；微调索引与原始索引不可混用。
+本机 4 步训练已通过：语言侧注意力 LoRA 共 3,211,264 个参数，224 个张量实际更新；每步损失与梯度有限，冻结参数无梯度。损失依次为 0.167308、0.036332、0.015513、0.028853，各步使用不同样本，不据此判断收敛。训练耗时 221.1 秒，PyTorch 峰值显存约 7.04 GiB，未启用梯度检查点。适配器保存重载后两页向量最大绝对差为 0，随后完成 8 个开发页面建库与 4 条开发查询检索。完整记录在 `outputs/train-smoke/result.json`，适配器在 `outputs/train-smoke/adapter`，仅约 6.45 MB；仍需原始模型权重。
+
+微调模型查询使用配套配置和索引：
+
+```bash
+python -m foliorecall query --config outputs/train-smoke/config.json \
+  --index outputs/train-smoke/index 'your English query' --json
+```
+
+该入口已在独立进程用开发查询验证，正常返回 5 条带页码与预览信息的 JSON 结果，记录在 `outputs/train-smoke/cli-query.json`。原始模型配置与微调索引不可混用。后续训练显存不足时，用新的输出目录加 `--gradient-checkpointing` 重试；失败记录保留在 `failure.json`。
 
 VDR 按列读取了完整英文元数据：94,225 页、53,512 条非空查询，保留无查询页面记录。切片服务不覆盖整库，本次仅从前 1000 行中选择满足隔离要求的 8 条训练查询、4 条开发查询及原始负页面，共 24 张图像。全部图像可解码，正负页面跨划分无交叉，负例均在原始标注列表内。选择规则、原始负例和排除项保存在 `data/vdr`；这组前部小样本仅检查流程，页面级隔离不等于已经确认原始文档隔离。正式训练应按源 Parquet 获取页面，不能沿用切片服务限制来代表全量数据。
 
-HR 使用完整 1110 页候选库与种子 42 抽出的 20 条英文查询，只作早期流程检查；nDCG 使用线性等级增益，Recall 对等级大于 0 的相关页面计算。
+HR 使用完整 1110 页候选库与种子 42 抽出的 20 条英文查询，保留多页标签和相关性等级。实际建库 1031.0 秒，PyTorch 峰值显存 4.24 GiB；nDCG@10 为 0.5951，Recall@5/10 为 0.5890/0.6829。模型驻留并预热一次后，查询编码与 FAISS 搜索的 P50/P95 为 52.0/67.4 ms，不含进程启动和模型加载；评测峰值显存约 3.98 GiB。结果见 `outputs/hr-original/result.json`，索引在 `indexes/hr-original`。这些结果只作早期流程检查，未用于调参，不代表完整 ViDoRe 成绩。nDCG 使用线性等级增益，Recall 对等级大于 0 的相关页面计算。
 
-索引保存生效配置与页面映射；关键运行在产物目录保存 `run.json`、命令参数、必要的未提交差异和结果，训练同时保存样本清单。已存在的索引拒绝覆盖，重建时使用新目录。修改适配器时也使用新产物目录并重建匹配索引，避免路径相同而权重变化。下载数据、模型、生成预览及索引均不提交 Git。
+索引保存生效配置与页面映射；关键运行在产物目录保存 `run.json`、命令参数、必要的未提交差异和结果，训练同时保存样本清单。[实验摘要](doc/experiments.csv)关联实际代码版本、配置和本地产物；HR 评测与训练运行于干净的 `7b1bf91`，演示建库的未提交代码差异已随运行保存。已存在的索引拒绝覆盖，重建时使用新目录。修改输入、预处理或适配器时使用新产物目录并重建匹配索引。下载数据、模型、生成预览及索引均不提交 Git。
 
 ## 使用范围与上游来源说明
 
