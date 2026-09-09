@@ -1,0 +1,18 @@
+{
+  "model_id": "Qwen/Qwen3-VL-Embedding-2B",
+  "revision": "9f2f7e710d6d81056aa5c0a4f04764fec6bb7bda",
+  "device": "cuda",
+  "dtype": "bfloat16",
+  "attn_implementation": "sdpa",
+  "batch_size": 1,
+  "dimension": 2048,
+  "prompt": "Represent the user's input.",
+  "pooling": "lasttoken",
+  "normalize": true,
+  "max_length": 8192,
+  "min_pixels": 4096,
+  "max_pixels": 1310720,
+  "adapter": null,
+  "seed": 42,
+  "train": {"rank": 8, "alpha": 16, "learning_rate": 0.0001, "batch_size": 2, "mini_batch_size": 1, "steps": 4}
+}

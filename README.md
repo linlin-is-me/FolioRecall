@@ -8,7 +8,7 @@ FolioRecall 面向英文视觉文档检索，计划支持 PDF / 页面图像导�
 
 ## 当前状态
 
-2026-09-09：已接入指定远程仓库，独立开发环境通过最小验证。PDF 导入、原始模型加载、页面编码、建库查询、模型训练与正式评测尚未完成。环境检查使用合成数据，不代表第一阶段基础系统已经完成。
+2026-09-09：独立环境已接入；两份 HR 原始 PDF 已成功导入，共 45 页。命令行、编码、索引、评测和训练检查代码已接入，CPU 核心测试通过。原始模型下载及 GPU 端到端验证进行中，尚无检索质量或训练成功结论，第一阶段未完成。
 
 当前任务、阻塞与下一步统一见[开发计划的当前开发重点](doc/多模态文档检索项目开发计划.md#当前开发重点)。
 
@@ -92,9 +92,44 @@ python scripts/check_env.py
 
 ## 使用范围与上游来源
 
-首版先支持英文页面检索，中文、答案生成、重排序及候选方法按开发计划择需启用。完整使用路径计划在 GPU 环境为自有 PDF 建库；CPU 快速体验路径计划使用可分发的示例索引与查询学生，两者目前均未实现。
+## 第一阶段命令
 
-计划复用 [Qwen3-VL-Embedding](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B)、[Sentence Transformers](https://github.com/huggingface/sentence-transformers)、[NanoVDR](https://github.com/Ryenhails/NanoVDR) 和 [FAISS](https://github.com/facebookresearch/faiss)。本轮只完成环境准备，尚未复现上游训练或获得性能结果。后续引入代码和分发权重时保留相应来源、许可与适配说明。
+在仓库根目录执行 `source scripts/activate_env.sh`。以下命令只使用同一个环境；新增的 `peft`、`datasets` 按 requirements.txt 安装，已有未变更组件不必重装。
+
+已跑通真实 PDF 获取与导入：
+
+```bash
+python scripts/prepare_data.py pdfs
+python -m foliorecall import data/pdfs/*.pdf --output data/demo
+python -m unittest discover -s tests -v
+```
+
+两份报告的来源、revision、许可入口保存在 `data/pdfs/sources.json`；页面清单在 `data/demo/pages.jsonl`，预览在同目录的文档子目录。物理页码从 1 开始，与页面印刷页码可能不同。缓存链接保留原文件名；重复导入未变化的文件复用已有页面，输入变化按路径、大小、修改时间和 DPI 更新对应结果。每次 import 输出本次输入的完整清单，不自动追加其他文档。损坏或加密 PDF 的跳过原因写入 `import-errors.json`。
+
+下面为已接入、等待实际模型验证的命令，不表示已跑通：
+
+```bash
+python scripts/prepare_data.py model
+python -m foliorecall index --pages data/demo/pages.jsonl --output indexes/demo-original
+python -m foliorecall query --index indexes/demo-original 'How does migration affect the projected EU working-age population?'
+python scripts/prepare_data.py hr
+python -m foliorecall index --pages data/hr/pages.jsonl --output indexes/hr-original
+python -m foliorecall evaluate --index indexes/hr-original --output outputs/hr-original
+python scripts/prepare_data.py vdr
+python -m foliorecall train-smoke --output outputs/train-smoke
+```
+
+默认配置为 `configs/baseline.json`，可用 `--config` 指定配置，查询加 `--json` 输出结构化结果。图像入口使用 `import --image-manifest <JSONL> --output <目录>`；每行提供 `page_id`、`doc_id`、`source`、从 1 开始的 `page_number`、`preview`，预览相对清单目录解析。HR 基准直接使用官方图像，不使用演示 PDF 的重新渲染图像。
+
+首次训练显存不足时，用新的输出目录加 `--gradient-checkpointing` 重试；仍失败则保留 `failure.json`，不将流程检查写成训练成功。训练产物只保存 LoRA，加载时仍需原始模型；微调索引与原始索引不可混用。8 条训练查询和 4 条开发查询只检查流程，页面级隔离不等于已经确认原始文档隔离。HR 使用完整 1110 页候选库与种子 42 抽出的 20 条英文查询，只作早期流程检查；nDCG 使用线性等级增益，Recall 对等级大于 0 的相关页面计算。
+
+索引保存生效配置与页面映射；关键运行在产物目录保存 `run.json`、必要的未提交差异和结果。修改适配器时使用新产物目录并重建匹配索引，避免路径相同而权重变化。下载数据、模型、生成预览及索引均不提交 Git。
+
+## 使用范围与上游来源说明
+
+首版先接入英文页面检索，中文、答案生成、重排序及候选方法按开发计划择需启用。GPU 建库和训练以实际验证记录为准；使用查询学生的 CPU 快速体验路径尚未实现。
+
+编码与训练接入 [Qwen3-VL-Embedding](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) 和 [Sentence Transformers](https://github.com/huggingface/sentence-transformers) 的现成接口，精确搜索使用 [FAISS](https://github.com/facebookresearch/faiss)。本项目实现导入元数据、命令行、数据筛选与划分、索引配置匹配及检查脚本；尚未取得训练收益证据。NanoVDR 的查询学生与效率评测适配留待后续阶段。
 
 ## 开发文档
 
