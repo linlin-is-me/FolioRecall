@@ -80,6 +80,7 @@ def main():
         vectors = encode_pages(model, pages, config)
         save_index(vectors, pages, config, args.output)
         result = {"pages": len(pages), "seconds": time.perf_counter() - start,
+                  "timing_scope": "image reads, encoding and index save; excludes model loading and preprocessing probe",
                   "gpu": torch.cuda.get_device_name() if config["device"] == "cuda" else None,
                   "peak_cuda_bytes": torch.cuda.max_memory_allocated() if config["device"] == "cuda" else None}
         write_json(Path(args.output) / "build.json", result)

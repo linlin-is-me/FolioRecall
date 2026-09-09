@@ -8,7 +8,7 @@ FolioRecall 面向英文视觉文档检索，计划支持 PDF / 页面图像导�
 
 ## 当前状态
 
-2026-09-09：两份 HR 原始 PDF 共 45 页已导入；HR 完整 1110 页、20 条固定英文查询，以及 VDR 的 8 条训练查询、4 条开发查询和 24 张图像已准备并通过数据检查。命令行与模型接口已接入，CPU 核心测试通过。原始模型下载仍在处理，GPU 编码、检索质量和训练尚未实测，第一阶段未完成。
+2026-09-09：两份 HR 原始 PDF 共 45 页已完成原始模型编码、索引保存加载与命令行查询，固定图表查询 Top-1 命中正确文档和物理第 10 页。HR 完整 1110 页、20 条固定英文查询及 VDR 的 8 条训练、4 条开发查询和 24 张图像已准备并检查。HR 模型评分和 LoRA 反传尚待实测，第一阶段未完成。
 
 当前任务、阻塞与下一步统一见[开发计划的当前开发重点](doc/多模态文档检索项目开发计划.md#当前开发重点)。
 
@@ -102,6 +102,7 @@ python scripts/prepare_data.py pdfs
 python -m foliorecall import data/pdfs/*.pdf --output data/demo
 python scripts/prepare_data.py hr
 python scripts/prepare_data.py vdr
+python scripts/prepare_data.py model
 python -m unittest discover -s tests -v
 ```
 
@@ -109,12 +110,18 @@ python -m unittest discover -s tests -v
 
 实际验收：两份报告分别 20、25 页，物理页码连续；混合导入一个加密测试文件时，记录密码错误并保留其余 45 页。3 项 CPU 测试覆盖索引重载与来源映射、配置错配、分级多正例指标及损坏输入。记录保存在本地 `outputs/cpu-validation`、`outputs/data-validation`、`outputs/vdr-validation`。[人工查询案例](examples/demo_queries.json)对应人口报告物理第 10 页的 Figure 3，官方 HR 页面 ID 为 1028，印刷页码为 7；两条导入路径已视觉核对。
 
-下面为已接入、等待实际模型验证的命令，不表示已跑通：
+已跑通原始模型建库与查询：
 
 ```bash
-python scripts/prepare_data.py model
 python -m foliorecall index --pages data/demo/pages.jsonl --output indexes/demo-original
-python -m foliorecall query --index indexes/demo-original 'How does migration affect the projected EU working-age population?'
+python -m foliorecall query --index indexes/demo-original 'Which figure compares projections of the EU working-age population under baseline and no-migration scenarios?'
+```
+
+45 页建库约 41.4 秒，PyTorch 峰值显存约 4.24 GiB；时间包含页面读取、编码和索引保存，不含模型加载。结构化查询结果见本地 `outputs/demo-query.json`，来源核对见 `outputs/demo-query-check.json`。当前 Sentence Transformers 的图像参数分组为 `image`；修复后两页探测不再出现未知参数警告，实际网格与输入形状保存在 `indexes/probe-original-validated/encoding-probe.json`。模型首次下载曾停顿，使用 aria2 HTTP 续传恢复，现已接回标准 Hugging Face 缓存；aria2 仅用于下载故障恢复，不是应用运行依赖。
+
+下面为待实测的完整 HR 评分与训练命令：
+
+```bash
 python -m foliorecall index --pages data/hr/pages.jsonl --output indexes/hr-original
 python -m foliorecall evaluate --index indexes/hr-original --output outputs/hr-original
 python -m foliorecall train-smoke --output outputs/train-smoke

@@ -44,6 +44,7 @@ def evaluate(model, config, index, pages, queries, qrels):
         results.append({"query_id": query_id, "query": query["query"], "ranking": ranked,
                         **metrics([p["page_id"] for p in ranked], relevance)})
     return {"scope": "early retrieval flow check; not full benchmark", "queries": len(results),
+            "timing_scope": "resident model after one warmup; encoding plus FAISS search; excludes process/model loading",
             "candidates": index.ntotal,
             "metrics": {key: float(np.mean([row[key] for row in results])) for key in ("nDCG@10", "Recall@5", "Recall@10")},
             "query_seconds": {f"p{p}": float(np.percentile(timings, p)) for p in (50, 95)},

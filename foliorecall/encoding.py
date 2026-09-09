@@ -12,7 +12,7 @@ def load_encoder(config):
         config["model_id"], revision=config["revision"], device=config["device"],
         model_kwargs={"dtype": getattr(torch, config["dtype"]), "attn_implementation": config["attn_implementation"]},
     )
-    if model.get_sentence_embedding_dimension() != config["dimension"]:
+    if model.get_embedding_dimension() != config["dimension"]:
         raise ValueError("模型维度与配置不符")
     model.max_seq_length = config["max_length"]
     if model[1].pooling_mode != config["pooling"]:
@@ -25,7 +25,7 @@ def load_encoder(config):
 
 def processing(config):
     return {"text": {"max_length": config["max_length"], "truncation": True},
-            "images": {"min_pixels": config["min_pixels"], "max_pixels": config["max_pixels"]}}
+            "image": {"min_pixels": config["min_pixels"], "max_pixels": config["max_pixels"]}}
 
 
 def encode(model, inputs, config):
