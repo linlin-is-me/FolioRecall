@@ -184,9 +184,13 @@ def prepare_vdr(output):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("kind", choices=["pdfs", "hr", "vdr", "model"])
+    parser.add_argument("kind", choices=["pdfs", "hr", "vdr", "model", "vdr-stage2"])
+    parser.add_argument("--manifest-only", action="store_true")
     args = parser.parse_args()
-    if args.kind == "model":
+    if args.kind == "vdr-stage2":
+        from foliorecall.data_preparation import prepare_stage2
+        prepare_stage2("data/vdr-stage2", "data/vdr/english-metadata.jsonl", args.manifest_only)
+    elif args.kind == "model":
         from huggingface_hub import snapshot_download
         config = read_json("configs/baseline.json")
         print(snapshot_download(config["model_id"], revision=config["revision"],
