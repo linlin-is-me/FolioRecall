@@ -191,6 +191,7 @@ class RunChecks(TrainerCallback):
 
 
 def train(config, data, output, resume=None, profile=False, stop_after=None, max_seconds=3600):
+    invocation_started = time.monotonic()
     if config["device"] != "cuda" or not torch.cuda.is_available():
         raise ValueError("普通 LoRA 训练需要可用 CUDA")
     if config.get("adapter"):
@@ -274,6 +275,9 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
         "frozen_gradients_absent": True, "steps": checks.history, "log_history": trainer.state.log_history}
     report["completed_query_presentations"] = sum(len(batches[step["step"] - 1]) for step in checks.history)
     report["step_training_seconds"] = sum(step["seconds"] for step in checks.history)
+    report["step_timing_scope"] = "forward/backward/optimizer; excludes DataLoader collation and checkpoint I/O"
+    report["segment_timing_scope"] = "Trainer.train wall time, including collation and checkpoint I/O; excludes initial model load and export reload"
+    report["invocation_seconds"] = time.monotonic() - invocation_started
     write_json(output / f"result-step-{trainer.state.global_step}.json", report)
     if report["complete"]:
         adapter = checkpoint_adapter(output / f"checkpoint-{trainer.state.global_step}")
@@ -293,5 +297,6 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
         index, restored = load_index(output / "probe-index", adapted)
         report["reload_max_abs_diff"] = float(np.abs(before - after).max())
         report["probe_retrieval"] = search(index, restored, encode_queries(model, [rows[0]["query"]], adapted))
+        report["invocation_seconds"] = time.monotonic() - invocation_started
         write_json(output / "result.json", report)
     return report

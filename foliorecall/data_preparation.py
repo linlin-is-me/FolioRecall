@@ -82,10 +82,21 @@ def download_shard(url, target, size):
             # Without its piece map or our completion marker no prefix is trusted.
             target.unlink()
             offset = 0
-        subprocess.run(["aria2c", "--continue=true", "--allow-overwrite=false", "--auto-file-renaming=false",
+        command = ["aria2c", "--continue=true", "--allow-overwrite=false", "--auto-file-renaming=false",
                         "--max-connection-per-server=16", "--split=16", "--min-split-size=8M",
                         "--auto-save-interval=5", "--max-tries=4", "--retry-wait=3", "--summary-interval=30", "--console-log-level=warn",
-                        "--download-result=full", "--dir=" + str(target.parent), "--out=" + target.name, url], check=True)
+                        "--download-result=full", "--dir=" + str(target.parent), "--out=" + target.name, url]
+        for attempt in range(4):
+            if target.exists() and not control.exists():
+                target.unlink()
+            try:
+                subprocess.run(command, check=True)
+                break
+            except subprocess.CalledProcessError:
+                if attempt == 3:
+                    raise
+                print(f"retry connection: {target.name}, attempt {attempt + 2}/4", flush=True)
+                time.sleep(2 ** attempt)
         if target.stat().st_size != size or control.exists():
             raise ValueError("aria2 分片下载未完整结束")
         write_json(marker, {"url": url, "bytes": size})
@@ -196,7 +207,9 @@ def prepare_stage2(output, metadata_path, manifest_only=False):
             "preparation_run": str(run_dir),
             "new_payload_bytes_lower_bound": transferred, "traffic_note": "excludes retries and protocol overhead; resumed preallocated files may undercount",
             "selected_pages": len(wanted), "seconds": time.monotonic() - started})
-        write_json(journal_path, journal)
+        pending = journal_path.with_name("extraction.pending.json")
+        write_json(pending, journal)
+        pending.replace(journal_path)
         # This exact task-owned file was just extracted successfully.
         target.unlink()
         target.with_name(target.name + ".complete.json").unlink(missing_ok=True)

@@ -53,8 +53,15 @@ def main():
         try:
             train(config, args.data, args.output, args.resume, args.profile, args.stop_after, args.max_seconds)
         except Exception as exc:
-            write_json(Path(args.output) / "failure.json", {"type": type(exc).__name__, "message": str(exc), "config": config,
-                                                          "resume": args.resume, "profile": args.profile})
+            import torch
+            failure = {"type": type(exc).__name__, "message": str(exc), "config": config,
+                       "resume": args.resume, "profile": args.profile}
+            if torch.cuda.is_available():
+                failure.update(peak_cuda_bytes=torch.cuda.max_memory_allocated(),
+                               reserved_cuda_bytes=torch.cuda.memory_reserved(),
+                               total_cuda_bytes=torch.cuda.get_device_properties(0).total_memory)
+            write_json(Path(args.output) / f"failure-{time.time_ns()}.json", failure)
+            write_json(Path(args.output) / "failure.json", failure)
             raise
         return 0
     if args.command == "train-smoke":
