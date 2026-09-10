@@ -3,6 +3,8 @@ from collections import Counter
 import io
 from pathlib import Path
 import random
+import shutil
+import subprocess
 import time
 import unicodedata
 import urllib.request
@@ -68,8 +70,17 @@ def download_shard(url, target, size):
     offset = target.stat().st_size if target.exists() else 0
     if offset > size:
         raise ValueError(f"临时分片尺寸异常：{target}")
-    if offset == size:
+    control = target.with_name(target.name + ".aria2")
+    if offset == size and not control.exists():
         return 0
+    if shutil.which("aria2c"):
+        subprocess.run(["aria2c", "--continue=true", "--allow-overwrite=false", "--auto-file-renaming=false",
+                        "--max-connection-per-server=8", "--split=8", "--min-split-size=8M",
+                        "--max-tries=4", "--retry-wait=3", "--summary-interval=30", "--console-log-level=warn",
+                        "--download-result=full", "--dir=" + str(target.parent), "--out=" + target.name, url], check=True)
+        if target.stat().st_size != size or control.exists():
+            raise ValueError("aria2 分片下载未完整结束")
+        return max(0, size - offset)
     transferred = 0
     for attempt in range(4):
         offset = target.stat().st_size if target.exists() else 0
@@ -167,7 +178,8 @@ def prepare_stage2(output, metadata_path, manifest_only=False):
                     "has_query": bool(normalized_query(mapping[pid].get("query")))})
             cursor += len(batch)
         journal["shards"].append({"source_shard": file.path, "rows": len(shard_ids), "source_bytes": file.size,
-            "transferred_bytes": transferred, "selected_pages": len(wanted), "seconds": time.monotonic() - started})
+            "new_payload_bytes_lower_bound": transferred, "traffic_note": "excludes retries and protocol overhead; resumed preallocated files may undercount",
+            "selected_pages": len(wanted), "seconds": time.monotonic() - started})
         write_json(journal_path, journal)
         # This exact task-owned file was just extracted successfully.
         target.unlink()

@@ -15,9 +15,9 @@ def main():
     imp.add_argument("--image-manifest")
     imp.add_argument("--output", required=True)
     imp.add_argument("--dpi", type=int, default=150)
-    for name in ("index", "query", "evaluate", "train-smoke"):
+    for name in ("index", "query", "evaluate", "train-smoke", "train"):
         command = sub.add_parser(name)
-        command.add_argument("--config", default="configs/baseline.json")
+        command.add_argument("--config", default="configs/lora-baseline.json" if name == "train" else "configs/baseline.json")
         if name == "index":
             command.add_argument("--pages", required=True)
             command.add_argument("--output", required=True)
@@ -31,9 +31,14 @@ def main():
                 command.add_argument("--data", default="data/hr")
                 command.add_argument("--output", required=True)
         else:
-            command.add_argument("--data", default="data/vdr")
+            command.add_argument("--data", default="data/vdr-stage2" if name == "train" else "data/vdr")
             command.add_argument("--output", required=True)
             command.add_argument("--gradient-checkpointing", action="store_true")
+            if name == "train":
+                command.add_argument("--resume")
+                command.add_argument("--profile", action="store_true")
+                command.add_argument("--stop-after", type=int)
+                command.add_argument("--max-seconds", type=float, default=3600)
     args = parser.parse_args()
     if args.command == "import":
         from .documents import import_documents
@@ -41,6 +46,17 @@ def main():
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result["pages"] else 1
     config = read_json(args.config)
+    if args.command == "train":
+        from .trainer import train
+        if args.gradient_checkpointing:
+            config["train"]["gradient_checkpointing"] = True
+        try:
+            train(config, args.data, args.output, args.resume, args.profile, args.stop_after, args.max_seconds)
+        except Exception as exc:
+            write_json(Path(args.output) / "failure.json", {"type": type(exc).__name__, "message": str(exc), "config": config,
+                                                          "resume": args.resume, "profile": args.profile})
+            raise
+        return 0
     if args.command == "train-smoke":
         from .training import train_smoke
         try:
@@ -102,6 +118,7 @@ def main():
         result = evaluate(model, config, index, pages, read_rows(data / "queries.jsonl"), read_json(data / "qrels.json"))
         if (data / "source.json").exists():
             result["dataset"] = read_json(data / "source.json")
+            result["scope"] = result["dataset"].get("scope", result["scope"])
         write_json(Path(args.output) / "result.json", result)
         print(json.dumps({k: v for k, v in result.items() if k != "results"}, indent=2))
     return 0

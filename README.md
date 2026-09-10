@@ -20,7 +20,11 @@ FolioRecall 面向英文视觉文档检索，计划支持 PDF / 页面图像导�
 
 固定 seed 42，先按全部页面 ID 划分 80%/20%，排除规范化后重复查询组涉及的页面，再抽取 3,000 条训练、200 条开发查询。每条训练查询保留一个上游顺序的有效同侧负例；开发候选库固定 1,000 页。仅生成清单的实际结果为 5,763 个训练页面、1,000 个开发页面，共 6,763 页。原始文档身份仍未核实，页面级隔离的局限保留。完整英文源读取预算约 18.34 GiB，逐片提取后删除本次临时分片，不清理已有缓存。
 
-新增数据划分测试 `python -m unittest discover -s tests -p test_stage2_data.py -v` 已通过。实际图片提取、训练入口和资源短跑尚待完成；计划先做约一小时本机短跑，再由用户确定主训练设备与预算。
+新增数据划分测试 `python -m unittest discover -s tests -p test_stage2_data.py -v` 已通过。单连接下载较慢时复用本机已有 aria2 续传；没有 aria2 时使用 Python 下载。分片日志区分源文件字节与新增有效载荷下界，重试及协议开销不冒充精确流量。
+
+普通训练入口已接入现有 Sentence Transformers Trainer，配置为 `configs/lora-baseline.json`。支持 `train --profile --stop-after 4` 和 `train --profile --resume <checkpoint-4>`，两次均保持 8 步目标；`--max-seconds` 限制本进程训练时间，在完整步骤后保存。普通 `train` 按固定批次完成一遍，半程和结束评测内部开发集。每个检查点保存配套 `encoding.json`，查询和索引使用该配置。
+
+`python -m unittest discover -s tests -p test_stage2_training.py -v` 的 3 项新增 CPU 测试通过，覆盖跨批页面复用、开发隔离与图像预处理包装。真实 Trainer 反传、适配器恢复、图片提取和资源短跑仍待完成；计划先做约一小时本机短跑，再由用户确定主训练设备与预算。
 
 ## 本机开发环境
 
