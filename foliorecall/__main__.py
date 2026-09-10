@@ -50,10 +50,12 @@ def main():
                        "gradient_checkpointing": args.gradient_checkpointing})
             raise
         return 0
-    from .encoding import load_encoder, encode_pages, encode_queries
     from .search import load_index, save_index, search
     if args.command in ("query", "evaluate"):
         index, pages = load_index(args.index, config)
+        if args.command == "evaluate":
+            from .evaluation import validate_candidate_corpus
+            validate_candidate_corpus(pages, read_rows(Path(args.data) / "pages.jsonl"))
     else:
         from .documents import validate_pages
         if (Path(args.output) / "index.faiss").exists():
@@ -63,6 +65,7 @@ def main():
             raise ValueError("页面清单为空")
     if args.command != "query":
         provenance(args.output, config)
+    from .encoding import load_encoder, encode_pages, encode_queries
     model = load_encoder(config)
     if args.command == "index":
         import torch

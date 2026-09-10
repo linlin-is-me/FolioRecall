@@ -3,6 +3,20 @@ import time
 import numpy as np
 
 
+def validate_candidate_corpus(index_pages, corpus_pages):
+    """Compare metadata only; non-relevant candidates must also be retained."""
+    index_ids = [row["page_id"] for row in index_pages]
+    corpus_ids = [row["page_id"] for row in corpus_pages]
+    if not index_ids or not corpus_ids:
+        raise ValueError("评测候选库不能为空")
+    indexed, expected = set(index_ids), set(corpus_ids)
+    if len(indexed) != len(index_ids) or len(expected) != len(corpus_ids):
+        raise ValueError("评测候选库包含重复 page_id")
+    if indexed != expected:
+        raise ValueError(f"评测完整候选库不匹配：索引缺少 {len(expected - indexed)} 页，"
+                         f"多出 {len(indexed - expected)} 页")
+
+
 def metrics(ranked_ids, relevance):
     if len(ranked_ids) != len(set(ranked_ids)):
         raise ValueError("排名包含重复页面")

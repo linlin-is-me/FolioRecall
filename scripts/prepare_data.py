@@ -72,7 +72,8 @@ def prepare_hr(output):
                     image.convert("RGB").save(target)
             doc_id = row["doc_id"]
             filename = doc_id if doc_id.endswith(".pdf") else doc_id + ".pdf"
-            pages.append({"page_id": corpus_id, "doc_id": doc_id, "page_number": int(row["page_number_in_doc"]) + 1,
+            pages.append({"page_id": corpus_id, "row_index": len(pages), "doc_id": doc_id,
+                          "page_number": int(row["page_number_in_doc"]) + 1,
                           "dataset_page_number": row["page_number_in_doc"], "preview": str(target.resolve()),
                           "source": f"https://huggingface.co/datasets/{HR}/resolve/{HR_REV}/pdfs/{filename}",
                           "document_name": filename})
