@@ -24,7 +24,9 @@ FolioRecall 面向英文视觉文档检索，计划支持 PDF / 页面图像导�
 
 普通训练入口已接入现有 Sentence Transformers Trainer，配置为 `configs/lora-baseline.json`。支持 `train --profile --stop-after 4` 和 `train --profile --resume <checkpoint-4>`，两次均保持 8 步目标；`--max-seconds` 限制本进程训练时间，在完整步骤后保存。普通 `train` 按固定批次完成一遍，半程和结束评测内部开发集。每个检查点保存配套 `encoding.json`，查询和索引使用该配置。
 
-`python -m unittest discover -s tests -p test_stage2_training.py -v` 的 3 项新增 CPU 测试通过，覆盖跨批页面复用、开发隔离与图像预处理包装。真实 Trainer 反传、适配器恢复、图片提取和资源短跑仍待完成；计划先做约一小时本机短跑，再由用户确定主训练设备与预算。
+`python -m unittest discover -s tests -p test_stage2_training.py -v` 的 3 项新增 CPU 测试通过，覆盖跨批页面复用、开发隔离与图像预处理包装。数据测试现为 2 项，新增预分配文件不能冒充完整下载的回归场景。
+
+已用阶段一的 8 条现有训练查询完成新 Trainer 两步兼容性检查：第 1 步保存、第 2 步从适配器及 224 组优化器状态恢复，恢复后 112 个 LoRA 张量更新，冻结参数无梯度，页面向量重载最大差为 0.000243（容差 0.001）。记录在 `outputs/stage2/compat`，这是接口检查，不是正式资源样本或质量结果。修复包括允许仅执行零学习率 warmup 的中间检查点，以及绕过 Transformers 5.16.1 的 `local_files_only` 转发异常；保持环境版本不变。完整图片提取与 32 条资源短跑仍待完成，之后由用户确定主训练设备与预算。
 
 ## 本机开发环境
 

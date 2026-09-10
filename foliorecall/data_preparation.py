@@ -71,16 +71,29 @@ def download_shard(url, target, size):
     if offset > size:
         raise ValueError(f"临时分片尺寸异常：{target}")
     control = target.with_name(target.name + ".aria2")
-    if offset == size and not control.exists():
+    marker = target.with_name(target.name + ".complete.json")
+    if offset == size and not control.exists() and marker.exists():
+        if read_json(marker) != {"url": url, "bytes": size}:
+            raise ValueError("下载完成标记与当前源不一致")
         return 0
     if shutil.which("aria2c"):
+        if offset and not control.exists():
+            # aria2 can preallocate an incomplete file to the full source size.
+            # Without its piece map or our completion marker no prefix is trusted.
+            target.unlink()
+            offset = 0
         subprocess.run(["aria2c", "--continue=true", "--allow-overwrite=false", "--auto-file-renaming=false",
-                        "--max-connection-per-server=8", "--split=8", "--min-split-size=8M",
-                        "--max-tries=4", "--retry-wait=3", "--summary-interval=30", "--console-log-level=warn",
+                        "--max-connection-per-server=16", "--split=16", "--min-split-size=8M",
+                        "--auto-save-interval=5", "--max-tries=4", "--retry-wait=3", "--summary-interval=30", "--console-log-level=warn",
                         "--download-result=full", "--dir=" + str(target.parent), "--out=" + target.name, url], check=True)
         if target.stat().st_size != size or control.exists():
             raise ValueError("aria2 分片下载未完整结束")
+        write_json(marker, {"url": url, "bytes": size})
         return max(0, size - offset)
+    if control.exists():
+        raise ValueError("存在 aria2 分段续传文件，需要 aria2 完成恢复")
+    if offset == size:
+        target.unlink()
     transferred = 0
     for attempt in range(4):
         offset = target.stat().st_size if target.exists() else 0
@@ -99,6 +112,7 @@ def download_shard(url, target, size):
                             last = time.monotonic()
             if target.stat().st_size != size:
                 raise OSError("下载未达到源分片尺寸")
+            write_json(marker, {"url": url, "bytes": size})
             return transferred
         except OSError:
             if attempt == 3:
@@ -125,7 +139,8 @@ def prepare_stage2(output, metadata_path, manifest_only=False):
         raise ValueError("已有数据切分不匹配，请使用新目录")
     write_json(output / "split.json", split)
     write_json(output / "source.json", selection)
-    provenance(output / "preparation", selection)
+    run_dir = output / "preparation" / f"run-{time.time_ns()}"
+    provenance(run_dir, selection)
     print({key: value for key, value in selection.items() if key != "excluded_duplicate_query_pages"}, flush=True)
     if manifest_only:
         return
@@ -178,11 +193,13 @@ def prepare_stage2(output, metadata_path, manifest_only=False):
                     "has_query": bool(normalized_query(mapping[pid].get("query")))})
             cursor += len(batch)
         journal["shards"].append({"source_shard": file.path, "rows": len(shard_ids), "source_bytes": file.size,
+            "preparation_run": str(run_dir),
             "new_payload_bytes_lower_bound": transferred, "traffic_note": "excludes retries and protocol overhead; resumed preallocated files may undercount",
             "selected_pages": len(wanted), "seconds": time.monotonic() - started})
         write_json(journal_path, journal)
         # This exact task-owned file was just extracted successfully.
         target.unlink()
+        target.with_name(target.name + ".complete.json").unlink(missing_ok=True)
         row_base += len(shard_ids)
         print(f"extracted {file.path}: {len(wanted)} pages; total {len(journal['pages'])}", flush=True)
     pages = sorted(journal["pages"], key=lambda p: p["row_index"])

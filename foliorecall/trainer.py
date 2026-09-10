@@ -115,8 +115,10 @@ def checkpoint_adapter(folder):
 class AdapterTrainer(SentenceTransformerTrainer):
     def _load_from_checkpoint(self, checkpoint_path):
         adapter = checkpoint_adapter(checkpoint_path)
-        result = self.model[0].model.load_adapter(str(adapter), adapter_name="default", hotswap=True,
-                                                is_trainable=True, local_files_only=True)
+        # Transformers 5.16.1 incorrectly forwards its local_files_only argument
+        # into LoadStateDictConfig. This is an existing verified local directory.
+        result = self.model[0].model.load_adapter(str(adapter.resolve()), adapter_name="default", hotswap=True,
+                                                is_trainable=True)
         if result and any(getattr(result, key, []) for key in ("missing_keys", "unexpected_keys", "mismatched_keys")):
             raise ValueError(f"适配器恢复 key 不匹配：{result}")
         if not all(p.requires_grad for n, p in self.model.named_parameters() if "lora_" in n):
@@ -148,6 +150,7 @@ class RunChecks(TrainerCallback):
     def on_step_begin(self, args, state, control, **kwargs):
         torch.cuda.synchronize()
         self.step_started = time.monotonic()
+        self.step_lr = kwargs["optimizer"].param_groups[0]["lr"]
 
     def on_pre_optimizer_step(self, args, state, control, **kwargs):
         grads = [p.grad for p in self.model.parameters() if p.requires_grad and p.grad is not None]
@@ -159,6 +162,7 @@ class RunChecks(TrainerCallback):
     def on_step_end(self, args, state, control, **kwargs):
         torch.cuda.synchronize()
         self.history.append({"step": state.global_step, "seconds": time.monotonic() - self.step_started,
+                             "learning_rate_used": self.step_lr,
                              "peak_cuda_bytes": torch.cuda.max_memory_allocated()})
         write_json(self.output / "progress.json", {"steps": self.history, "completed_steps": state.global_step})
         if (self.stop_after and state.global_step >= self.stop_after) or time.monotonic() - self.started >= self.max_seconds:
@@ -213,11 +217,13 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
     start_step = int(read_json(Path(resume) / "trainer_state.json")["global_step"]) if resume else 0
     if resume and Path(resume).resolve().parent != output:
         raise ValueError("恢复检查点必须属于本训练输出目录")
-    provenance(output / f"run-from-{start_step}", dict(config, profile=profile, resume=resume,
+    provenance(output / f"run-from-{start_step}-{time.time_ns()}", dict(config, profile=profile, resume=resume,
                                                       stop_after=stop_after, max_seconds=max_seconds))
     torch.manual_seed(config["seed"])
     started = time.monotonic()
     model = load_encoder(config)
+    model.model_card_data.generate_widget_examples = False
+    model.model_card_data.local_files_only = True
     loading_seconds = time.monotonic() - started
     backbone = model[0].model
     targets = [n for n, _ in backbone.named_modules() if "language_model." in n and ".self_attn." in n
@@ -256,14 +262,18 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
     trained = time.monotonic()
     trainer.train(resume_from_checkpoint=resume)
     updated = [n for n, p in model.named_parameters() if n in initial and not torch.equal(initial[n], p.detach().cpu())]
-    if not updated:
+    if not updated and (trainer.state.global_step >= max_steps or any(
+            step.get("learning_rate_used", 0) > 0 for step in checks.history if step["step"] > start_step)):
         raise ValueError("LoRA 参数没有更新")
     report = {"scope": "resource/backward/resume check only" if profile else "ordinary LoRA internal-development baseline",
         "completed_steps": trainer.state.global_step, "target_steps": max_steps,
         "complete": trainer.state.global_step >= max_steps, "model_loading_seconds": loading_seconds,
         "segment_seconds": time.monotonic() - trained, "peak_cuda_bytes": torch.cuda.max_memory_allocated(),
         "updated_tensors": len(updated), "trainable_parameters": sum(p.numel() for p in initial.values()),
+        "parameter_update_check": "passed" if updated else "pending; only zero-learning-rate warmup executed",
         "frozen_gradients_absent": True, "steps": checks.history, "log_history": trainer.state.log_history}
+    report["completed_query_presentations"] = sum(len(batches[step["step"] - 1]) for step in checks.history)
+    report["step_training_seconds"] = sum(step["seconds"] for step in checks.history)
     write_json(output / f"result-step-{trainer.state.global_step}.json", report)
     if report["complete"]:
         adapter = checkpoint_adapter(output / f"checkpoint-{trainer.state.global_step}")

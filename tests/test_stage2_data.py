@@ -1,9 +1,25 @@
 import unittest
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
 
-from foliorecall.data_preparation import normalized_query, select_records
+from foliorecall.data_preparation import normalized_query, select_records, download_shard
 
 
 class SelectionTests(unittest.TestCase):
+    def test_preallocated_file_is_not_treated_as_complete(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / "shard.parquet"
+            target.write_bytes(b"\0" * 32)
+            def complete(*args, **kwargs):
+                self.assertFalse(target.exists())
+                target.write_bytes(b"x" * 32)
+            with patch("foliorecall.data_preparation.shutil.which", return_value="aria2c"), patch(
+                    "foliorecall.data_preparation.subprocess.run", side_effect=complete) as run:
+                self.assertEqual(download_shard("https://example.test/shard", target, 32), 32)
+                self.assertEqual(download_shard("https://example.test/shard", target, 32), 0)
+                self.assertEqual(run.call_count, 1)
+
     def test_pairing_and_duplicate_groups(self):
         rows = [{"id": str(i), "query": f"query {i}" if i < 30 else "",
                  "negatives": [str(j) for j in range(40) if j != i], "row_index": i} for i in range(40)]
