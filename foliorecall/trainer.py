@@ -3,8 +3,10 @@
 Only collating local images, stable batching and adapter-only resume are adapted.
 """
 import gc
+from functools import partial
 import math
 from pathlib import Path
+import shutil
 import time
 
 import numpy as np
@@ -16,7 +18,7 @@ from sentence_transformers import SentenceTransformerTrainer, SentenceTransforme
 from sentence_transformers.base.sampler import NoDuplicatesBatchSampler
 from sentence_transformers.sentence_transformer.data_collator import SentenceTransformerDataCollator
 from sentence_transformers.losses import CachedMultipleNegativesRankingLoss
-from transformers import TrainerCallback
+from transformers import TrainerCallback, set_seed
 
 from .data_preparation import normalized_query
 from .encoding import load_encoder, processing, encode_pages, encode_queries
@@ -84,9 +86,28 @@ def batch_plan(dataset, batch_size, seed):
     return batches
 
 
-def fixed_batch_sampler(dataset, batch_size, seed=0, **kwargs):
-    # Top-level callable remains serializable in the framework's training_args.
-    return batch_plan(dataset, batch_size, seed)
+def fixed_batch_sampler(dataset, batch_size, seed=0, *, fixed_seed=None, **kwargs):
+    # ST does not forward args.data_seed to this callable. Bind our config seed
+    # explicitly; a top-level partial also survives training_args serialization.
+    if fixed_seed is None:
+        raise ValueError("组批必须显式绑定配置 fixed_seed")
+    return batch_plan(dataset, batch_size, fixed_seed)
+
+
+def restore_history(output, start_step, run_directory):
+    """Keep abandoned attempts, but count only steps on the resumed path."""
+    progress = output / "progress.json"
+    history = read_json(progress)["steps"] if progress.exists() else []
+    retained = [row for row in history if row["step"] <= start_step]
+    if [row["step"] for row in retained] != list(range(1, start_step + 1)):
+        raise ValueError("进度历史与恢复检查点不一致：存在缺失或重复步骤")
+    for path in [progress, *output.glob("result*.json")]:
+        if path.exists():
+            shutil.copy2(path, run_directory / ("previous-" + path.name))
+    # A completed report from an abandoned path must not describe this attempt.
+    (output / "result.json").unlink(missing_ok=True)
+    write_json(progress, {"steps": retained, "completed_steps": start_step})
+    return retained
 
 
 def preprocessing(model, config):
@@ -126,15 +147,15 @@ class AdapterTrainer(SentenceTransformerTrainer):
 
 
 class RunChecks(TrainerCallback):
-    def __init__(self, model, output, config, stop_after, max_seconds, initial, dev, profile):
+    def __init__(self, model, output, config, stop_after, max_seconds, initial, dev, profile, history=None):
         self.model, self.output, self.config = model, output, config
         self.stop_after, self.max_seconds, self.initial = stop_after, max_seconds, initial
         self.dev, self.profile = dev, profile
-        progress = output / "progress.json"
-        self.history = read_json(progress)["steps"] if progress.exists() else []
+        self.history = list(history or [])
         self.started = time.monotonic()
 
     def on_train_begin(self, args, state, control, optimizer=None, **kwargs):
+        self.started = time.monotonic()
         torch.cuda.reset_peak_memory_stats()
         self.initial.clear()
         self.initial.update({n: p.detach().cpu().clone() for n, p in self.model.named_parameters() if p.requires_grad})
@@ -149,6 +170,7 @@ class RunChecks(TrainerCallback):
 
     def on_step_begin(self, args, state, control, **kwargs):
         torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
         self.step_started = time.monotonic()
         self.step_lr = kwargs["optimizer"].param_groups[0]["lr"]
 
@@ -181,13 +203,20 @@ class RunChecks(TrainerCallback):
         if not self.profile:
             pages = read_rows(self.dev / "pages.jsonl")
             was_training = self.model.training
-            self.model.eval()
-            vectors = encode_pages(self.model, pages, config)
-            index = save_index(vectors, pages, config, folder / "dev-index")
-            result = evaluate(self.model, config, index, pages, read_rows(self.dev / "queries.jsonl"), read_json(self.dev / "qrels.json"))
-            result["scope"] = "internal development; not external test"
-            write_json(folder / "dev-result.json", result)
-            self.model.train(was_training)
+            try:
+                self.model.eval()
+                torch.cuda.reset_peak_memory_stats()
+                started = time.monotonic()
+                vectors = encode_pages(self.model, pages, config)
+                index = save_index(vectors, pages, config, folder / "dev-index")
+                write_json(folder / "dev-build.json", {"pages": len(pages), "seconds": time.monotonic() - started,
+                           "peak_cuda_bytes": torch.cuda.max_memory_allocated(),
+                           "timing_scope": "page encoding and index save with training model resident"})
+                result = evaluate(self.model, config, index, pages, read_rows(self.dev / "queries.jsonl"), read_json(self.dev / "qrels.json"))
+                result["scope"] = "internal development; not external test"
+                write_json(folder / "dev-result.json", result)
+            finally:
+                self.model.train(was_training)
 
 
 def train(config, data, output, resume=None, profile=False, stop_after=None, max_seconds=3600):
@@ -209,8 +238,11 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
     max_steps = settings["profile_steps"] if profile else len(batches)
     if profile and (len(batches) != max_steps or any(len(b) != settings["batch_size"] for b in batches)):
         raise ValueError("资源样本存在批冲突，须重新选择 32 条配对后短跑")
-    run_settings = {"config": config, "profile": profile, "data": str(data), "rows": rows, "batches": batches, "max_steps": max_steps}
+    run_settings = {"config": config, "profile": profile, "data": str(data), "rows": rows, "batches": batches,
+                    "max_steps": max_steps, "batching_version": 2, "batching_seed": config["seed"]}
     if (output / "settings.json").exists():
+        if read_json(output / "settings.json").get("batching_version") != 2:
+            raise ValueError("旧运行未绑定配置组批 seed，不能按新规则恢复；请保留旧产物并使用新输出目录")
         if not resume or read_json(output / "settings.json") != run_settings:
             raise ValueError("已有训练目录或恢复配置不一致，请使用新输出目录")
     write_json(output / "settings.json", run_settings)
@@ -218,9 +250,13 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
     start_step = int(read_json(Path(resume) / "trainer_state.json")["global_step"]) if resume else 0
     if resume and Path(resume).resolve().parent != output:
         raise ValueError("恢复检查点必须属于本训练输出目录")
-    provenance(output / f"run-from-{start_step}-{time.time_ns()}", dict(config, profile=profile, resume=resume,
+    if start_step >= max_steps:
+        raise ValueError("检查点已达到训练目标，无需恢复")
+    run_directory = output / f"run-from-{start_step}-{time.time_ns()}"
+    provenance(run_directory, dict(config, profile=profile, resume=resume,
                                                       stop_after=stop_after, max_seconds=max_seconds))
-    torch.manual_seed(config["seed"])
+    history = restore_history(output, start_step, run_directory)
+    set_seed(config["seed"])
     started = time.monotonic()
     model = load_encoder(config)
     model.model_card_data.generate_widget_examples = False
@@ -256,8 +292,8 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
         logging_steps=1, logging_nan_inf_filter=False, save_steps=max(1, max_steps // 2), save_strategy="steps",
         eval_strategy="no", load_best_model_at_end=False, seed=config["seed"], data_seed=config["seed"],
         report_to="none", disable_tqdm=True, dataloader_num_workers=0, dataloader_pin_memory=False,
-        batch_sampler=fixed_batch_sampler)
-    checks = RunChecks(model, output, config, stop_after, max_seconds, initial, data / "dev", profile)
+        batch_sampler=partial(fixed_batch_sampler, fixed_seed=config["seed"]))
+    checks = RunChecks(model, output, config, stop_after, max_seconds, initial, data / "dev", profile, history)
     loss = CachedMultipleNegativesRankingLoss(model, mini_batch_size=settings["mini_batch_size"], scale=settings["scale"])
     trainer = AdapterTrainer(model=model, args=args, train_dataset=dataset, loss=loss, data_collator=collator, callbacks=[checks])
     trained = time.monotonic()
@@ -269,14 +305,16 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
     report = {"scope": "resource/backward/resume check only" if profile else "ordinary LoRA internal-development baseline",
         "completed_steps": trainer.state.global_step, "target_steps": max_steps,
         "complete": trainer.state.global_step >= max_steps, "model_loading_seconds": loading_seconds,
-        "segment_seconds": time.monotonic() - trained, "peak_cuda_bytes": torch.cuda.max_memory_allocated(),
+        "segment_seconds": time.monotonic() - trained,
+        "peak_cuda_bytes": max((step["peak_cuda_bytes"] for step in checks.history), default=0),
+        "peak_cuda_scope": "maximum training-step allocation on the effective resumed path; development build/query reported separately",
         "updated_tensors": len(updated), "trainable_parameters": sum(p.numel() for p in initial.values()),
         "parameter_update_check": "passed" if updated else "pending; only zero-learning-rate warmup executed",
         "frozen_gradients_absent": True, "steps": checks.history, "log_history": trainer.state.log_history}
     report["completed_query_presentations"] = sum(len(batches[step["step"] - 1]) for step in checks.history)
     report["step_training_seconds"] = sum(step["seconds"] for step in checks.history)
     report["step_timing_scope"] = "forward/backward/optimizer; excludes DataLoader collation and checkpoint I/O"
-    report["segment_timing_scope"] = "Trainer.train wall time, including collation and checkpoint I/O; excludes initial model load and export reload"
+    report["segment_timing_scope"] = "Trainer.train wall time, including collation, checkpoint I/O and development evaluation; excludes initial model load and export reload"
     report["invocation_seconds"] = time.monotonic() - invocation_started
     write_json(output / f"result-step-{trainer.state.global_step}.json", report)
     if report["complete"]:

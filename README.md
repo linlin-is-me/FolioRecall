@@ -22,9 +22,11 @@ FolioRecall 面向英文视觉文档检索，计划支持 PDF / 页面图像导�
 
 数据来源、revision、排除原因和划分见 `data/vdr-stage2/source.json`、`split.json`；逐片行号、解码检查和流量下界见 `extraction.json`。成功分片的获取与提取累计约 110 分钟，未包含所有失败重试、暂停和早期续传时间。英文源合计约 18.34 GiB，另有一个损坏分片重新获取，实际网络流量未完整计量。本次临时分片逐片删除，已有缓存保留。最终引用检查见 `outputs/stage2/data-check/final/result.json`。
 
-已有 3 项数据测试和 3 项训练 CPU 测试通过；本轮复用这些结果。普通训练使用 SentenceTransformerTrainer、CachedMNRL 和语言侧共享 LoRA，配置集中在 [configs/lora-baseline.json](configs/lora-baseline.json)。支持跨批页面复用，禁止批内正负页面冲突；3,000 条记录组成 750 个四样本批次，无尾批。预处理包装与原编码路径一致，恢复适配器时复用现有模型，优化器、调度器和随机状态由训练器接续。阶段一 `train-smoke` 保留。
+前次已有 3 项数据测试和 3 项训练 CPU 测试通过。普通训练使用 SentenceTransformerTrainer、CachedMNRL 和语言侧共享 LoRA，配置集中在 [configs/lora-baseline.json](configs/lora-baseline.json)。支持跨批页面复用，禁止批内正负页面冲突；此前 3,000 条记录组成 750 个四样本批次，无尾批。预处理包装与原编码路径一致，恢复适配器时复用现有模型，优化器、调度器和随机状态由训练器接续。阶段一 `train-smoke` 保留。
 
-本机已实际运行：
+本轮审计发现，历史资源短跑的数据划分和模型初始化使用 seed 42，组批器实际使用默认 seed 0。历史数值与原始配置保留；后续 `train` 统一读取配置中的 seed 42，显式传给 sampler，并在模型初始化前用 `set_seed` 设置 Python、NumPy 和 Torch。新运行记录 `batching_version=2`，新代码拒绝恢复缺少该版本的旧运行；原短跑产物仍可用于查阅，不转换为新格式。本轮 8 项相关 CPU 测试通过，实际 sampler 与 32/3,000 查询的保存安排一致；普通训练的保存评测分支待 GPU 验证。
+
+以下为本机历史运行命令；旧输出不作为新代码的续训入口：
 
 ```bash
 source scripts/activate_env.sh
@@ -38,7 +40,7 @@ HF_HUB_OFFLINE=1 python -m foliorecall train --config configs/lora-baseline.json
 
 资源样本覆盖不同页面尺寸，文字、表格和图表检查见 `outputs/stage2/page-spot-check.json`。8 步损失与梯度有限，224 个 LoRA 张量更新、冻结参数无梯度；第 4 步恢复了 224 组优化器状态和对应学习率，始终采用相同的 8 步调度目标。未启用梯度检查点，峰值分配显存约 7.15 GiB。两段训练合计 279.7 秒，包含组批与检查点保存；模型加载约 26–29 秒。适配器重载的两页向量最大差为 0.000228，容差为 0.001，配套索引检索通过。记录在 `outputs/stage2/profile/result-step-4.json`、`result.json`、`resume-state-4.json` 和 `probe-index`。该适配器只验证资源与流程，不参与教师选择。
 
-训练输出分别记录实际查询展示次数、步骤计算时间、训练段时间和包含模型加载/导出重载的进程内时间；恢复后汇总步记录涵盖完整运行，训练段时间仅覆盖当次调用。主训练估算汇总两次调用，不使用框架对中断任务汇总的 samples/sec。早期两步兼容性检查及修复记录保留在 `outputs/stage2/compat`。
+训练输出分别记录实际查询展示次数、步骤计算时间、训练段时间和包含模型加载/导出重载的进程内时间。新恢复逻辑按检查点步数裁剪进度历史，旧记录先保存在当次 `run-from-*` 目录的 `previous-*.json`，避免旧检查点续训混入后续步骤。训练峰值显存从训练步骤记录汇总，与检查点目录的 `dev-build.json`、`dev-result.json` 分开；历史裁剪和显存分离的 CPU 回归已通过，普通训练回调的 GPU 验证待完成。训练段时间仅覆盖当次调用，主训练估算汇总两次调用，不使用框架对中断任务汇总的 samples/sec。早期两步兼容性检查及修复记录保留在 `outputs/stage2/compat`。
 
 原始模型的固定内部开发任务也已跑通：
 
@@ -53,7 +55,7 @@ HF_HUB_OFFLINE=1 python -m foliorecall evaluate --data data/vdr-stage2/dev \
 
 资源估算与具体未召回查询见 `outputs/stage2/resource-summary.json`，运行版本与配置入口见 [实验摘要](doc/experiments.csv)。750 步训练按短跑外推约 7.3 小时，两次开发建库按原始模型成本约 17 分钟，建议本机预留 8–10 小时；不同页面组合、功耗和温度会影响实际耗时，完整 LoRA 开发建库成本尚未实测。本轮规定的短跑、恢复及原始模型评测已在一小时计算预算内完成，无需为用满预算重复运行。
 
-主训练尚未启动，须先确定设备与预算；本机执行时沿用普通 `train` 入口并按获准时长设置 `--max-seconds`，默认值为 3,600 秒，到达后在完整步骤处保存，再用 `--resume` 接续。教师尚未选定，`outputs/stage2/teacher.json` 尚未生成。下一项是从原始模型重新初始化 3,000 查询的一遍 LoRA 基线，随后按开发错误证据决定是否做单项对照；暂不开始查询蒸馏。
+主训练尚未启动，须先完成本轮修复验证，再确定设备与预算；本机执行时沿用普通 `train` 入口并按获准时长设置 `--max-seconds`，默认值为 3,600 秒，到达后在完整步骤处保存，再用 `--resume` 接续。教师尚未选定，`outputs/stage2/teacher.json` 尚未生成。预算确定后，从原始模型重新初始化 3,000 查询的一遍 LoRA 基线，随后按开发错误证据决定是否做单项对照；暂不开始查询蒸馏。
 
 ## 本机开发环境
 
