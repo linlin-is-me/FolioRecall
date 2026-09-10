@@ -86,7 +86,16 @@ HF_HUB_OFFLINE=1 python -u -m foliorecall train \
 
 [页面抽查记录](outputs/stage2/page-spot-check.json) 的 `retrieval_error_review` 已检查全部 13 条非 Top-1 查询的原标页及 Top-1 页。助手视觉判断暂分为：6 条具体证据排序问题，5 条可能存在其他相关页，1 条查询指代含糊，1 条证据不足。例如 NTP 时间、湖泊日期与 D0 公式有具体区分依据；屋顶农业挑战、零工优势及缓存访问可能涉及多页相关。唯一未召回的漫画角色查询缺少作品指代，原标图也没有身份文字。每例保留 ID、排名、两页路径、证据及不确定性；这些判断不是人工真值，没有改动标签，也不据此过滤训练负例。当前证据不足以认定冻结开发任务不可用，保留 200 查询、1,000 页任务；若后续选模受这些争议影响，再作人工复核并在统一标签上重算候选。
 
-主训练尚未启动，当前没有需要先修改实现的阻塞。下一步由用户确定设备与预算，再从原始模型重新初始化 3,000 查询的一遍普通 LoRA 基线；本机沿用 `train` 并按获准时长设置 `--max-seconds`，默认 3,600 秒，到达后在完整步骤处保存，可用 `--resume` 接续。8 小时预算仅覆盖普通基线，不包含后续错误对照。短跑适配器不参与教师选择，`outputs/stage2/teacher.json` 尚未生成，暂不开始查询蒸馏。
+2026-09-11 00:19（北京时间），用户已授权在本机按 8 小时预算启动 3,000 查询普通 LoRA 基线。后台进程使用 `configs/lora-baseline.json`，从原始模型初始化，seed 42、确定性模式，目标 750 步，第 375、750 步保存并开发评测；`--max-seconds 28800` 在完整步骤后检查，退出保存及评测可能额外耗时。已确认首个优化步骤完成，尚无主训练质量结果。启动记录 `outputs/stage2/lora-launch.json`，日志 `outputs/stage2/lora.log`，配置、实际组批、进度及检查点在 `outputs/stage2/lora`。Codex 定时监控 `foliorecall` 每 30 分钟检查，完成或异常时报告，不自动延长预算。应用需保持运行以执行监控；训练进程独立运行于 WSL，勿关机或关闭 WSL。短跑适配器不参与教师选择，教师与蒸馏尚未启动。
+
+```bash
+source scripts/activate_env.sh
+HF_HUB_OFFLINE=1 python -u -m foliorecall train \
+  --config configs/lora-baseline.json --data data/vdr-stage2 \
+  --output outputs/stage2/lora --max-seconds 28800
+```
+
+上述任务已经在后台运行，命令仅供记录，不要重复启动。后续读取半程与最终开发结果，再决定错误对照；失败或预算结束时先核实已保存状态，不自动重启。
 
 ## 本机开发环境
 
