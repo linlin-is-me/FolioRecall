@@ -24,7 +24,7 @@ FolioRecall 面向英文视觉文档检索，计划支持 PDF / 页面图像导�
 
 前次已有 3 项数据测试和 3 项训练 CPU 测试通过。普通训练使用 SentenceTransformerTrainer、CachedMNRL 和语言侧共享 LoRA，配置集中在 [configs/lora-baseline.json](configs/lora-baseline.json)。支持跨批页面复用，禁止批内正负页面冲突；此前 3,000 条记录组成 750 个四样本批次，无尾批。预处理包装与原编码路径一致，恢复适配器时复用现有模型，优化器、调度器和随机状态由训练器接续。阶段一 `train-smoke` 保留。
 
-本轮审计发现，历史资源短跑的数据划分和模型初始化使用 seed 42，组批器实际使用默认 seed 0。历史数值与原始配置保留；后续 `train` 统一读取配置中的 seed 42，显式传给 sampler，并在模型初始化前用 `set_seed` 设置 Python、NumPy 和 Torch。新运行记录 `batching_version=2`，新代码拒绝恢复缺少该版本的旧运行；原短跑产物仍可用于查阅，不转换为新格式。本轮 8 项相关 CPU 测试通过，实际 sampler 与 32/3,000 查询的保存安排一致；普通训练的保存评测分支待 GPU 验证。
+历史资源短跑的数据划分和模型初始化使用 seed 42，组批器实际使用默认 seed 0；原始配置与数值保留并补记差异。后续 `train` 从配置读取 seed 42，显式绑定 sampler，统一 Python、NumPy 和 Torch 随机状态；`train.full_determinism=true` 复用 Transformers 的确定性模式，在模型加载前启用并交给 Trainer 保持。新运行保存 `batching_version=2` 和实际组批 seed，旧格式或不同生效配置不能直接恢复，不改写历史检查点。统一 seed 本身不保证确定性算子行为，设置依据见 [PyTorch 2.8 复现说明](https://docs.pytorch.org/docs/2.8/notes/randomness.html)。
 
 以下为本机历史运行命令；旧输出不作为新代码的续训入口：
 
@@ -40,7 +40,21 @@ HF_HUB_OFFLINE=1 python -m foliorecall train --config configs/lora-baseline.json
 
 资源样本覆盖不同页面尺寸，文字、表格和图表检查见 `outputs/stage2/page-spot-check.json`。8 步损失与梯度有限，224 个 LoRA 张量更新、冻结参数无梯度；第 4 步恢复了 224 组优化器状态和对应学习率，始终采用相同的 8 步调度目标。未启用梯度检查点，峰值分配显存约 7.15 GiB。两段训练合计 279.7 秒，包含组批与检查点保存；模型加载约 26–29 秒。适配器重载的两页向量最大差为 0.000228，容差为 0.001，配套索引检索通过。记录在 `outputs/stage2/profile/result-step-4.json`、`result.json`、`resume-state-4.json` 和 `probe-index`。该适配器只验证资源与流程，不参与教师选择。
 
-训练输出分别记录实际查询展示次数、步骤计算时间、训练段时间和包含模型加载/导出重载的进程内时间。新恢复逻辑按检查点步数裁剪进度历史，旧记录先保存在当次 `run-from-*` 目录的 `previous-*.json`，避免旧检查点续训混入后续步骤。训练峰值显存从训练步骤记录汇总，与检查点目录的 `dev-build.json`、`dev-result.json` 分开；历史裁剪和显存分离的 CPU 回归已通过，普通训练回调的 GPU 验证待完成。训练段时间仅覆盖当次调用，主训练估算汇总两次调用，不使用框架对中断任务汇总的 samples/sec。早期两步兼容性检查及修复记录保留在 `outputs/stage2/compat`。
+训练输出分别记录有效查询展示次数、步骤计算时间、训练段时间和包含模型加载/导出重载的进程内时间。恢复时按检查点裁剪进度，旧记录留在当次 `run-from-*/previous-*.json`；后续检查点、索引和输出配置同步归档，避免重跑碰到已有索引或覆盖旧权重。`archived-artifacts.json` 保留原路径与归档位置；这些快照保留旧绝对路径供审计，不作为当前推理入口。训练显存取有效路径的逐步峰值，与检查点内 `dev-build.json`、`dev-result.json` 分开。普通训练启动前检查开发查询和标签文件，评测结束或异常时恢复训练状态。
+
+本轮 9 项相关 CPU 测试通过，实际 sampler 与 32/3,000 查询的保存安排完全一致，分别为 8/750 个四样本批次。复用原有 8 条训练、4 条开发查询及 24 张图像补齐专用回归清单 `outputs/stage2/train-fixes-data`，完成普通训练两步、保存后开发评测再反传、旧检查点恢复、归档与重载。未启用确定性模式时，连续/恢复页面向量差曾达 0.006913，记录在 `outputs/stage2/train-fixes-recovery-check`，不记为数值复现通过。开启确定性模式后，连续与恢复运行的 224 个适配器张量逐位一致，两页索引向量差为 0；单次保存重载向量差 0.000239，低于 0.001 容差，详见 `outputs/stage2/deterministic-recovery-check/result.json`。这是本机小样本实测，不保证跨硬件或版本逐位一致，也不是阶段二主训练或质量基线。早期缺少开发标签、旧索引冲突的失败日志和产物均保留。
+
+当前可运行的普通训练与恢复命令如下；输出目录已有完成结果，复跑时选用新目录：
+
+```bash
+HF_HUB_OFFLINE=1 python -m foliorecall train --config configs/lora-baseline.json \
+  --data outputs/stage2/train-fixes-data --output outputs/stage2/train-deterministic --max-seconds 600
+HF_HUB_OFFLINE=1 python -m foliorecall train --config configs/lora-baseline.json \
+  --data outputs/stage2/train-fixes-data --output outputs/stage2/train-deterministic \
+  --resume outputs/stage2/train-deterministic/checkpoint-1 --max-seconds 600
+```
+
+训练段时间覆盖当次调用的组批、保存和开发评测；有效步历史与实际尝试耗时分别解读，不采用框架对中断任务汇总的 samples/sec。
 
 原始模型的固定内部开发任务也已跑通：
 
@@ -53,9 +67,9 @@ HF_HUB_OFFLINE=1 python -m foliorecall evaluate --data data/vdr-stage2/dev \
 
 采用 `configs/baseline.json`，完整 1,000 页建库 497.7 秒、峰值分配显存约 4.24 GiB；200 条查询的 nDCG@10 为 0.9692、Recall@5/10 均为 0.995，驻留模型查询 P50/P95 为 30.9/39.1 ms。187 条查询 Top-1 命中原标正页，1 条未在 Top-10 召回；逐查询排名见 `outputs/stage2/dev-original/result.json`。原始模型在这组内部任务上已接近上限，区分方案的能力有限；尚无微调收益、稳定性或外部泛化结论，不修改冻结任务来追求差异。
 
-资源估算与具体未召回查询见 `outputs/stage2/resource-summary.json`，运行版本与配置入口见 [实验摘要](doc/experiments.csv)。750 步训练按短跑外推约 7.3 小时，两次开发建库按原始模型成本约 17 分钟，建议本机预留 8–10 小时；不同页面组合、功耗和温度会影响实际耗时，完整 LoRA 开发建库成本尚未实测。本轮规定的短跑、恢复及原始模型评测已在一小时计算预算内完成，无需为用满预算重复运行。
+资源估算与具体未召回查询见 `outputs/stage2/resource-summary.json`，运行版本与配置入口见 [实验摘要](doc/experiments.csv)。旧非确定性短跑曾外推 750 步约 7.3 小时，含评测建议 8–10 小时；这不是新确定性配置的预算承诺。确定性模式可能增加耗时，主训练前应在所选设备上用少量代表性步骤校准；不同页面组合、功耗和温度会影响实际耗时，完整 LoRA 开发建库成本尚未实测。本轮规定的短跑、恢复及原始模型评测已在一小时计算预算内完成，无需为用满预算重复运行。
 
-主训练尚未启动，须先完成本轮修复验证，再确定设备与预算；本机执行时沿用普通 `train` 入口并按获准时长设置 `--max-seconds`，默认值为 3,600 秒，到达后在完整步骤处保存，再用 `--resume` 接续。教师尚未选定，`outputs/stage2/teacher.json` 尚未生成。预算确定后，从原始模型重新初始化 3,000 查询的一遍 LoRA 基线，随后按开发错误证据决定是否做单项对照；暂不开始查询蒸馏。
+主训练尚未启动；修复已验证，下一步在选定设备上校准确定性配置的耗时，再确认主训练预算；本机执行时沿用普通 `train` 入口并按获准时长设置 `--max-seconds`，默认值为 3,600 秒，到达后在完整步骤处保存，再用 `--resume` 接续。教师尚未选定，`outputs/stage2/teacher.json` 尚未生成。预算确定后，从原始模型重新初始化 3,000 查询的一遍 LoRA 基线，随后按开发错误证据决定是否做单项对照；暂不开始查询蒸馏。
 
 ## 本机开发环境
 

@@ -18,7 +18,7 @@ from sentence_transformers import SentenceTransformerTrainer, SentenceTransforme
 from sentence_transformers.base.sampler import NoDuplicatesBatchSampler
 from sentence_transformers.sentence_transformer.data_collator import SentenceTransformerDataCollator
 from sentence_transformers.losses import CachedMultipleNegativesRankingLoss
-from transformers import TrainerCallback, set_seed
+from transformers import TrainerCallback, set_seed, enable_full_determinism
 
 from .data_preparation import normalized_query
 from .encoding import load_encoder, processing, encode_pages, encode_queries
@@ -104,6 +104,24 @@ def restore_history(output, start_step, run_directory):
     for path in [progress, *output.glob("result*.json")]:
         if path.exists():
             shutil.copy2(path, run_directory / ("previous-" + path.name))
+    # Replaying an older checkpoint must not overwrite another attempt's
+    # weights or collide with its immutable FAISS index. These are audit
+    # snapshots: their original absolute paths remain in the saved metadata.
+    discarded = [p for p in output.glob("checkpoint-*")
+                 if p.is_dir() and p.name.removeprefix("checkpoint-").isdigit()
+                 and int(p.name.removeprefix("checkpoint-")) > start_step]
+    discarded += [output / "probe-index", output / "config.json"]
+    archived = []
+    for path in discarded:
+        if path.exists():
+            if path.resolve().parent != output.resolve():
+                raise ValueError("归档路径超出训练输出目录")
+            target = run_directory / ("previous-" + path.name)
+            shutil.move(str(path), str(target))
+            archived.append({"original": str(path), "snapshot": str(target)})
+    if archived:
+        write_json(run_directory / "archived-artifacts.json", {
+            "paths": archived, "scope": "abandoned attempt snapshots; metadata retains original absolute paths, not active inference artifacts"})
     # A completed report from an abandoned path must not describe this attempt.
     (output / "result.json").unlink(missing_ok=True)
     write_json(progress, {"steps": retained, "completed_steps": start_step})
@@ -165,6 +183,7 @@ class RunChecks(TrainerCallback):
             raise ValueError("优化器参数与 LoRA 可训练参数不一致")
         write_json(self.output / f"resume-state-{state.global_step}.json", {
             "global_step": state.global_step, "optimizer_state_entries": len(optimizer.state),
+            "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
             "optimizer_steps": sorted({int(v["step"]) for v in optimizer.state.values() if "step" in v}),
             "learning_rates": [g["lr"] for g in optimizer.param_groups]})
 
@@ -229,6 +248,10 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
     output.mkdir(parents=True, exist_ok=True)
     split, pages = read_json(data / "split.json"), read_rows(data / "pages.jsonl")
     mapping = validate_training_data(split, pages, read_rows(data / "dev/pages.jsonl"))
+    if not profile:
+        for name in ("queries.jsonl", "qrels.json"):
+            if not (data / "dev" / name).is_file():
+                raise ValueError(f"普通训练需要完整开发任务，缺少 dev/{name}")
     settings = config["train"]
     if settings["epochs"] != 1 or settings["gradient_accumulation_steps"] != 1:
         raise ValueError("当前入口只实现单遍、梯度累积为 1 的对照训练")
@@ -256,7 +279,10 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
     provenance(run_directory, dict(config, profile=profile, resume=resume,
                                                       stop_after=stop_after, max_seconds=max_seconds))
     history = restore_history(output, start_step, run_directory)
-    set_seed(config["seed"])
+    if settings.get("full_determinism", False):
+        enable_full_determinism(config["seed"])
+    else:
+        set_seed(config["seed"])
     started = time.monotonic()
     model = load_encoder(config)
     model.model_card_data.generate_widget_examples = False
@@ -291,6 +317,7 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
         gradient_checkpointing=settings["gradient_checkpointing"], gradient_checkpointing_kwargs={"use_reentrant": False},
         logging_steps=1, logging_nan_inf_filter=False, save_steps=max(1, max_steps // 2), save_strategy="steps",
         eval_strategy="no", load_best_model_at_end=False, seed=config["seed"], data_seed=config["seed"],
+        full_determinism=settings.get("full_determinism", False),
         report_to="none", disable_tqdm=True, dataloader_num_workers=0, dataloader_pin_memory=False,
         batch_sampler=partial(fixed_batch_sampler, fixed_seed=config["seed"]))
     checks = RunChecks(model, output, config, stop_after, max_seconds, initial, data / "dev", profile, history)

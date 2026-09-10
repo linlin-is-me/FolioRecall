@@ -9,7 +9,7 @@ import torch
 from datasets import Dataset
 from PIL import Image
 
-from foliorecall.trainer import batch_plan, preprocessing, validate_training_data, restore_history, RunChecks
+from foliorecall.trainer import batch_plan, preprocessing, validate_training_data, restore_history, RunChecks, train
 from foliorecall.io import read_json, write_json, write_rows
 
 
@@ -58,15 +58,47 @@ class TrainingTests(unittest.TestCase):
             history = [{"step": i, "seconds": 10 * i} for i in range(1, 5)]
             write_json(output / "progress.json", {"steps": history, "completed_steps": 4})
             write_json(output / "result.json", {"complete": True})
+            write_json(output / "checkpoint-2/trainer_state.json", {"global_step": 2})
+            write_json(output / "checkpoint-4/dev-index/config.json", {"adapter": "old-path"})
+            write_json(output / "probe-index/config.json", {"adapter": "old-path"})
             retained = restore_history(output, 2, run)
             self.assertEqual([row["step"] for row in retained], [1, 2])
             self.assertEqual(read_json(run / "previous-progress.json")["steps"], history)
             self.assertTrue(read_json(run / "previous-result.json")["complete"])
             self.assertFalse((output / "result.json").exists())
+            self.assertTrue((output / "checkpoint-2").exists())
+            self.assertFalse((output / "checkpoint-4").exists())
+            self.assertTrue((run / "previous-checkpoint-4/dev-index/config.json").exists())
+            self.assertTrue((run / "previous-probe-index/config.json").exists())
             self.assertEqual(read_json(output / "progress.json")["completed_steps"], 2)
             write_json(output / "progress.json", {"steps": [history[0], history[0]]})
             with self.assertRaisesRegex(ValueError, "重复"):
                 restore_history(output, 2, run)
+
+    def test_missing_development_files_and_legacy_seed_fail_before_model_loading(self):
+        with tempfile.TemporaryDirectory() as folder:
+            data, output = Path(folder) / "data", Path(folder) / "run"
+            page = {"page_id": "a", "preview": str(Path(folder) / "a.png")}
+            row = {"query_id": "q", "query": "text", "positive": "a", "negative": "a"}
+            write_rows(data / "pages.jsonl", [page])
+            write_rows(data / "dev/pages.jsonl", [])
+            write_json(data / "split.json", {"train": [row], "dev": []})
+            config = {"device": "cuda", "seed": 42, "train": {
+                "epochs": 1, "gradient_accumulation_steps": 1, "batch_size": 1}}
+            legacy = {"config": config, "batches": [[0]]}
+            write_json(output / "settings.json", legacy)
+            with patch("torch.cuda.is_available", return_value=True), patch(
+                    "foliorecall.trainer.validate_training_data", return_value={"a": page}), patch(
+                    "foliorecall.trainer.batch_plan", return_value=[[0]]), patch(
+                    "foliorecall.trainer.load_encoder") as load:
+                with self.assertRaisesRegex(ValueError, "缺少 dev/queries"):
+                    train(config, data, output)
+                write_rows(data / "dev/queries.jsonl", [])
+                write_json(data / "dev/qrels.json", {})
+                with self.assertRaisesRegex(ValueError, "旧运行"):
+                    train(config, data, output, resume=output / "checkpoint-1")
+                load.assert_not_called()
+            self.assertEqual(read_json(output / "settings.json"), legacy)
 
     def test_checkpoint_evaluation_preserves_training_peak_and_mode(self):
         with tempfile.TemporaryDirectory() as folder:

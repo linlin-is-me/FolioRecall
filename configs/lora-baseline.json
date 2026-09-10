@@ -20,6 +20,6 @@
     "batch_size": 4, "mini_batch_size": 1, "gradient_accumulation_steps": 1,
     "scale": 20.0, "max_grad_norm": 1.0, "warmup_ratio": 0.03,
     "epochs": 1, "profile_queries": 32, "profile_steps": 8,
-    "gradient_checkpointing": false
+    "gradient_checkpointing": false, "full_determinism": true
   }
 }
