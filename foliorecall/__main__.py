@@ -39,6 +39,7 @@ def main():
                 command.add_argument("--profile", action="store_true")
                 command.add_argument("--stop-after", type=int)
                 command.add_argument("--max-seconds", type=float, default=3600)
+                command.add_argument("--checkpoint-only", action="store_true", help="Save checkpoints without development evaluation or final encoding probes")
     args = parser.parse_args()
     if args.command == "import":
         from .documents import import_documents
@@ -51,7 +52,7 @@ def main():
         if args.gradient_checkpointing:
             config["train"]["gradient_checkpointing"] = True
         try:
-            train(config, args.data, args.output, args.resume, args.profile, args.stop_after, args.max_seconds)
+            train(config, args.data, args.output, args.resume, args.profile, args.stop_after, args.max_seconds, checkpoint_only=args.checkpoint_only)
         except Exception as exc:
             import torch
             failure = {"type": type(exc).__name__, "message": str(exc), "config": config,

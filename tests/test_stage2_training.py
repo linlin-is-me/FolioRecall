@@ -14,6 +14,18 @@ from foliorecall.io import read_json, write_json, write_rows
 
 
 class TrainingTests(unittest.TestCase):
+    def test_checkpoint_only_skips_encoding_but_saves_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            write_json(output / "checkpoint-339/adapter_config.json", {})
+            callback = RunChecks(None, output, {}, None, 18000, {}, output / "missing-dev", False,
+                                 checkpoint_only=True)
+            with patch("foliorecall.trainer.encode_pages") as encode, patch("foliorecall.trainer.evaluate") as evaluate:
+                callback.on_save(None, SimpleNamespace(global_step=339), None)
+                encode.assert_not_called()
+                evaluate.assert_not_called()
+            self.assertTrue((output / "checkpoint-339/encoding.json").is_file())
+
     def test_reuse_across_batches_without_conflicting_pairs(self):
         dataset = Dataset.from_list([{"query": f"q{i}", "positive": {"path": f"p{i}"},
                                      "negative": {"path": f"n{i % 2}"}} for i in range(4)])

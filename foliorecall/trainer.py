@@ -165,10 +165,11 @@ class AdapterTrainer(SentenceTransformerTrainer):
 
 
 class RunChecks(TrainerCallback):
-    def __init__(self, model, output, config, stop_after, max_seconds, initial, dev, profile, history=None):
+    def __init__(self, model, output, config, stop_after, max_seconds, initial, dev, profile, history=None, checkpoint_only=False):
         self.model, self.output, self.config = model, output, config
         self.stop_after, self.max_seconds, self.initial = stop_after, max_seconds, initial
         self.dev, self.profile = dev, profile
+        self.checkpoint_only = checkpoint_only
         self.history = list(history or [])
         self.started = time.monotonic()
 
@@ -219,7 +220,7 @@ class RunChecks(TrainerCallback):
         folder = self.output / f"checkpoint-{state.global_step}"
         config = dict(self.config, adapter=str(checkpoint_adapter(folder).resolve()))
         write_json(folder / "encoding.json", config)
-        if not self.profile:
+        if not self.profile and not self.checkpoint_only:
             pages = read_rows(self.dev / "pages.jsonl")
             was_training = self.model.training
             try:
@@ -238,7 +239,7 @@ class RunChecks(TrainerCallback):
                 self.model.train(was_training)
 
 
-def train(config, data, output, resume=None, profile=False, stop_after=None, max_seconds=3600):
+def train(config, data, output, resume=None, profile=False, stop_after=None, max_seconds=3600, checkpoint_only=False):
     invocation_started = time.monotonic()
     if config["device"] != "cuda" or not torch.cuda.is_available():
         raise ValueError("普通 LoRA 训练需要可用 CUDA")
@@ -277,7 +278,7 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
         raise ValueError("检查点已达到训练目标，无需恢复")
     run_directory = output / f"run-from-{start_step}-{time.time_ns()}"
     provenance(run_directory, dict(config, profile=profile, resume=resume,
-                                                      stop_after=stop_after, max_seconds=max_seconds))
+                                                      stop_after=stop_after, max_seconds=max_seconds, checkpoint_only=checkpoint_only))
     history = restore_history(output, start_step, run_directory)
     if settings.get("full_determinism", False):
         enable_full_determinism(config["seed"])
@@ -320,7 +321,7 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
         full_determinism=settings.get("full_determinism", False),
         report_to="none", disable_tqdm=True, dataloader_num_workers=0, dataloader_pin_memory=False,
         batch_sampler=partial(fixed_batch_sampler, fixed_seed=config["seed"]))
-    checks = RunChecks(model, output, config, stop_after, max_seconds, initial, data / "dev", profile, history)
+    checks = RunChecks(model, output, config, stop_after, max_seconds, initial, data / "dev", profile, history, checkpoint_only=checkpoint_only)
     loss = CachedMultipleNegativesRankingLoss(model, mini_batch_size=settings["mini_batch_size"], scale=settings["scale"])
     trainer = AdapterTrainer(model=model, args=args, train_dataset=dataset, loss=loss, data_collator=collator, callbacks=[checks])
     trained = time.monotonic()
@@ -330,6 +331,7 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
             step.get("learning_rate_used", 0) > 0 for step in checks.history if step["step"] > start_step)):
         raise ValueError("LoRA 参数没有更新")
     report = {"scope": "resource/backward/resume check only" if profile else "ordinary LoRA internal-development baseline",
+        "checkpoint_only": checkpoint_only,
         "completed_steps": trainer.state.global_step, "target_steps": max_steps,
         "complete": trainer.state.global_step >= max_steps, "model_loading_seconds": loading_seconds,
         "segment_seconds": time.monotonic() - trained,
@@ -344,7 +346,9 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
     report["segment_timing_scope"] = "Trainer.train wall time, including collation, checkpoint I/O and development evaluation; excludes initial model load and export reload"
     report["invocation_seconds"] = time.monotonic() - invocation_started
     write_json(output / f"result-step-{trainer.state.global_step}.json", report)
-    if report["complete"]:
+    if report["complete"] and checkpoint_only:
+        write_json(output / "result.json", report)
+    if report["complete"] and not checkpoint_only:
         adapter = checkpoint_adapter(output / f"checkpoint-{trainer.state.global_step}")
         adapted = dict(config, adapter=str(adapter.resolve()))
         write_json(output / "config.json", adapted)
