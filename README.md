@@ -8,117 +8,49 @@ FolioRecall 面向英文视觉文档检索，计划支持 PDF / 页面图像导�
 
 ## 当前状态
 
-2026-09-09：第一阶段的命令行检索、原始模型评测和小规模训练验证已跑通。两份 HR 原始 PDF 共 45 页完成编码、索引保存加载与查询，固定图表查询 Top-1 命中正确文档和物理第 10 页。HR 完整 1110 页上的 20 条固定英文查询已评分；VDR 的 8 条训练、4 条开发查询完成 4 步 LoRA 训练、适配器重载与独立索引检索。当前结果证明流程可运行，尚无正式训练收益或多领域评测结论；界面未接入。
+第一阶段已完成 PDF／页面图像导入、原始模型编码、FAISS 索引保存加载、英文命令行查询、最小评测及 LoRA 反传与重载验证。两份 HR PDF 共45页，HR完整1110页上的20条英文查询仅用于早期流程检查。界面尚未接入。
 
-当前任务、阻塞与下一步统一见[开发计划的当前开发重点](doc/多模态文档检索项目开发计划.md#当前开发重点)。
-
-2026-09-10：阶段一收尾完成。HR 清单与索引元数据已补齐从 0 开始、按官方 Parquet 行顺序记录的 `row_index`；它与页面 ID、物理页码分别保存。评测在加载模型前校验 `--data/pages.jsonl` 与索引的完整页面 ID 集合，拒绝缺页、多页、重复 ID 或空候选库。第二阶段接续状态见下节。
+当前任务与下一步见[开发计划第1节](doc/多模态文档检索项目开发计划.md#当前开发重点)。
 
 ## 第二阶段接续
 
-**2026-09-11 评测与分析收尾：** 750 步训练、最终开发建库和评测均完成，监控已暂停。三次评测的完整 1,000 页候选 ID、200 查询 ID/文本一致；按同一未修改 qrels 重算全部指标，与保存值一致。原始/339步/750步 nDCG@10 分别为 0.969236/0.978095/0.977737，Recall@5 为 0.995/0.990/0.995，Recall@10 均为 0.995。最终相对原始 10 条原标正页排名改善、5 条退化、185 条不变。改进不等于稳定或跨领域收益，339与750的细小差异不足以直接作教师决定。
+2026-09-12：3,000查询普通LoRA已完成750步及内部开发评测。20对训练负例完成助手视觉审计，固定256查询的原负例／回填负例对照正在运行，第二阶段尚未结项。首个教师按已确认的保守策略选择原始模型，尚未生成蒸馏目标。
 
-最终模型在独立建库和查询进程中成功加载，匹配配置 `outputs/stage2/lora/checkpoint-750/encoding.json`，索引 `dev-index`，评测 `dev-evaluation/result.json`；1,000 页建库 512.89 秒，驻留查询 P50/P95 为 44.25/56.52 ms，不含模型加载。先前339步建库76.63分钟与本次差异原因未核实，不作因果速度结论。最终检查点的优化器续训未实测。
+| 候选 | nDCG@10 | Recall@5 | Recall@10 |
+|---|---:|---:|---:|
+| 原始模型 | 0.969236 | 0.995 | 0.995 |
+| 普通LoRA第339步 | 0.978095 | 0.990 | 0.995 |
+| 普通LoRA第750步 | 0.977737 | 0.995 | 0.995 |
 
-逐查询结果、资源记录与4例视觉复核见 `outputs/stage2/lora/quality-analysis.json`。NTP与D0案例有具体证据支持改善；诗歌四类笔记的退化实际涉及内容近重复页，费用差异题的Top1也含计算公式，均需人工复核相关性，未修改标签。下一步围绕这些争议及既定少量训练负例抽查，判断是否值得做单项对照，再决定教师；本轮未开展训练负例审计、额外对照或教师选择，第二阶段未全部完成，不进入蒸馏。
+三组使用相同的200查询、完整1000页候选库和未修改标签，保存排名重算一致。最终相对原始10条改善、5条退化、185条不变。费用差异与诗歌案例的相关性争议足以翻转两个检查点的次序，未人工补标；保守选择原始教师不表示微调无效。这是单seed、接近上限的内部任务，不代表稳定或跨领域收益。
 
-以下为此前执行记录。
+数据为固定revision的VDR英文部分：`data/vdr-stage2` 保存3000训练查询、200开发查询、5763训练页与1000开发页；先按全量页面池划分，再排除规范化重复查询组。保留无查询负页；原始文档身份未核实，只有页面级隔离。来源、划分、提取记录见该目录的 `source.json`、`split.json`、`extraction.json`；既有引用验证见 `outputs/stage2/data-check/final/result.json`。不重新下载英文分片。
 
-**最新进展：** 2026-09-11 750/750 步已完成，续训段耗时 10078.0 秒（约 2.80 小时），224 个 LoRA 张量更新，最终 checkpoint-750 及优化器、调度器、随机状态已保存，训练进程已退出。按最新授权已启动独立开发建库和评测，入口记录 `outputs/stage2/lora/final-evaluation-launch.json`、日志 `final-evaluation.log`、状态 `final-evaluation-status.json`；候选索引 `outputs/stage2/lora/checkpoint-750/dev-index`，评测输出 `checkpoint-750/dev-evaluation/result.json`。目前评测运行中，尚无最终质量结论，每30分钟监控继续接续，完成后比较原始、339步和最终结果。
+普通训练使用 [configs/lora-baseline.json](configs/lora-baseline.json)：seed42、确定性模式、语言侧共享LoRA、CachedMNRL、逻辑batch4与微批1。此前小样本连续／恢复的224个适配器张量逐位一致；实际主训练从339步成功续跑到750步。最终适配器在独立建库和查询进程中加载成功，750步优化器恢复未再实测。
 
-**2026-09-11 最新执行范围：** 用户随后授权：完成 750 步并保存退出后，由每 30 分钟监控自动接续冻结开发集的完整建库、评测和质量分析，比较原始模型、第 339 步与最终结果；运行中的 checkpoint-only 保持不变，评测独立执行。不开启额外训练、外部测试或蒸馏；若预算停止时未达 750 步，先报告等待，不自动延长。
+本轮审计对固定256查询及511页评分约489秒。随机10对中2对可能相关；低正负相似度差10对中4对可能相关、1对近重复、3对证据不足。混合抽样比例不能外推全体数据错误率。仅3条具备已核实的本地回填页，两组查询、正页及实际64个四查询批次一致；第33、47、56批发生负页变化。全部判断属于助手复核，不修改上游或开发标签。
 
-2026-09-11 12:18（北京时间）按用户授权从 `checkpoint-339` 续跑 5 小时，使用 `--max-seconds 18000 --checkpoint-only`。目标仍为 750 步，配置与 seed 42 不变；本段保存检查点时跳过开发评测，达到最终目标也跳过编码重载探测，仅保留训练检查和可恢复状态。新增开关属于运行选项，记入 run.json，不改变恢复匹配的模型/组批配置。7 项相关 CPU 测试通过，实际恢复记录 `outputs/stage2/lora/resume-state-339.json` 确认步数 339、224 组优化器状态及确定性模式。运行代码 `b5cc725`，日志 `outputs/stage2/lora-resume-339.log`，PID/命令记录 `outputs/stage2/lora-resume-339-launch.json`；每 30 分钟监控已恢复。本段运行中，结束后只核实和记录检查点，不分析或评测，不自动增加预算。计时在训练开始后按完整步骤检查，加载及保存可额外耗时。
+对照继续复用 `train --checkpoint-only`，第32／64步保存，末端分别建库和评测；64步适配器只用于方法诊断，不作为教师候选。新增评分、训练及评测累计预算4小时，不自动扩大训练。数据及批次在 `data/vdr-stage2-control`，运行状态、命令与日志在 `outputs/stage2/negative-control`。已有输出不能直接覆盖。
 
-
-2026-09-10：阶段二数据准备与普通训练入口已完成，32 条查询的资源短跑及断点恢复通过。主训练、负例错误对照和教师选择尚未开展；资源预算确认后再启动主训练。
-
-`data/vdr-stage2` 已完成 19 个英文源分片的逐片提取，固定 3,000 条训练查询、200 条开发查询、5,763 个训练页面和 1,000 个开发页面，共 6,763 页、约 1.48 GiB 图像，包含 1,445 个无查询页面。使用 seed 42，先划分全量页面池，再排除规范化重复查询组涉及的页面、抽样并固定上游顺序的有效同侧负例。开发任务位于 `data/vdr-stage2/dev`，所有候选共用其查询、标签和完整页面库。原始文档身份未核实，隔离仅达页面级；现有 20 条 HR 查询未发现规范化文本重合，不等于跨来源图像审计完成。
-
-数据来源、revision、排除原因和划分见 `data/vdr-stage2/source.json`、`split.json`；逐片行号、解码检查和流量下界见 `extraction.json`。成功分片的获取与提取累计约 110 分钟，未包含所有失败重试、暂停和早期续传时间。英文源合计约 18.34 GiB，另有一个损坏分片重新获取，实际网络流量未完整计量。本次临时分片逐片删除，已有缓存保留。最终引用检查见 `outputs/stage2/data-check/final/result.json`。
-
-前次已有 3 项数据测试和 3 项训练 CPU 测试通过。普通训练使用 SentenceTransformerTrainer、CachedMNRL 和语言侧共享 LoRA，配置集中在 [configs/lora-baseline.json](configs/lora-baseline.json)。支持跨批页面复用，禁止批内正负页面冲突；此前 3,000 条记录组成 750 个四样本批次，无尾批。预处理包装与原编码路径一致，恢复适配器时复用现有模型，优化器、调度器和随机状态由训练器接续。阶段一 `train-smoke` 保留。
-
-历史资源短跑的数据划分和模型初始化使用 seed 42，组批器实际使用默认 seed 0；原始配置与数值保留并补记差异。后续 `train` 从配置读取 seed 42，显式绑定 sampler，统一 Python、NumPy 和 Torch 随机状态；`train.full_determinism=true` 复用 Transformers 的确定性模式，在模型加载前启用并交给 Trainer 保持。新运行保存 `batching_version=2` 和实际组批 seed，旧格式或不同生效配置不能直接恢复，不改写历史检查点。统一 seed 本身不保证确定性算子行为，设置依据见 [PyTorch 2.8 复现说明](https://docs.pytorch.org/docs/2.8/notes/randomness.html)。
-
-以下为本机历史运行命令；旧输出不作为新代码的续训入口：
+本轮已运行入口：
 
 ```bash
 source scripts/activate_env.sh
-python scripts/prepare_data.py vdr-stage2
-HF_HUB_OFFLINE=1 python -m foliorecall train --config configs/lora-baseline.json \
-  --data data/vdr-stage2 --output outputs/stage2/profile --profile --stop-after 4 --max-seconds 900
-HF_HUB_OFFLINE=1 python -m foliorecall train --config configs/lora-baseline.json \
-  --data data/vdr-stage2 --output outputs/stage2/profile --profile \
-  --resume outputs/stage2/profile/checkpoint-4 --max-seconds 900
-```
-
-资源样本覆盖不同页面尺寸，文字、表格和图表检查见 `outputs/stage2/page-spot-check.json`。8 步损失与梯度有限，224 个 LoRA 张量更新、冻结参数无梯度；第 4 步恢复了 224 组优化器状态和对应学习率，始终采用相同的 8 步调度目标。未启用梯度检查点，峰值分配显存约 7.15 GiB。两段训练合计 279.7 秒，包含组批与检查点保存；模型加载约 26–29 秒。适配器重载的两页向量最大差为 0.000228，容差为 0.001，配套索引检索通过。记录在 `outputs/stage2/profile/result-step-4.json`、`result.json`、`resume-state-4.json` 和 `probe-index`。该适配器只验证资源与流程，不参与教师选择。
-
-训练输出分别记录有效查询展示次数、步骤计算时间、训练段时间和包含模型加载/导出重载的进程内时间。恢复时按检查点裁剪进度，旧记录留在当次 `run-from-*/previous-*.json`；后续检查点、索引和输出配置同步归档，避免重跑碰到已有索引或覆盖旧权重。`archived-artifacts.json` 保留原路径与归档位置；这些快照保留旧绝对路径供审计，不作为当前推理入口。训练显存取有效路径的逐步峰值，与检查点内 `dev-build.json`、`dev-result.json` 分开。普通训练启动前检查开发查询和标签文件，评测结束或异常时恢复训练状态。
-
-本轮 9 项相关 CPU 测试通过，实际 sampler 与 32/3,000 查询的保存安排完全一致，分别为 8/750 个四样本批次。复用原有 8 条训练、4 条开发查询及 24 张图像补齐专用回归清单 `outputs/stage2/train-fixes-data`，完成普通训练两步、保存后开发评测再反传、旧检查点恢复、归档与重载。未启用确定性模式时，连续/恢复页面向量差曾达 0.006913，记录在 `outputs/stage2/train-fixes-recovery-check`，不记为数值复现通过。开启确定性模式后，连续与恢复运行的 224 个适配器张量逐位一致，两页索引向量差为 0；单次保存重载向量差 0.000239，低于 0.001 容差，详见 `outputs/stage2/deterministic-recovery-check/result.json`。这是本机小样本实测，不保证跨硬件或版本逐位一致，也不是阶段二主训练或质量基线。早期缺少开发标签、旧索引冲突的失败日志和产物均保留。
-
-当前可运行的普通训练与恢复命令如下；输出目录已有完成结果，复跑时选用新目录：
-
-```bash
-HF_HUB_OFFLINE=1 python -m foliorecall train --config configs/lora-baseline.json \
-  --data outputs/stage2/train-fixes-data --output outputs/stage2/train-deterministic --max-seconds 600
-HF_HUB_OFFLINE=1 python -m foliorecall train --config configs/lora-baseline.json \
-  --data outputs/stage2/train-fixes-data --output outputs/stage2/train-deterministic \
-  --resume outputs/stage2/train-deterministic/checkpoint-1 --max-seconds 600
-```
-
-训练段时间覆盖当次调用的组批、保存和开发评测；有效步历史与实际尝试耗时分别解读，不采用框架对中断任务汇总的 samples/sec。
-
-原始模型的固定内部开发任务也已跑通：
-
-```bash
-HF_HUB_OFFLINE=1 python -m foliorecall index \
-  --pages data/vdr-stage2/dev/pages.jsonl --output indexes/vdr-dev-original
-HF_HUB_OFFLINE=1 python -m foliorecall evaluate --data data/vdr-stage2/dev \
-  --index indexes/vdr-dev-original --output outputs/stage2/dev-original
-```
-
-采用 `configs/baseline.json`，完整 1,000 页建库 497.7 秒、峰值分配显存约 4.24 GiB；200 条查询的 nDCG@10 为 0.9692、Recall@5/10 均为 0.995，驻留模型查询 P50/P95 为 30.9/39.1 ms。187 条查询 Top-1 命中原标正页，1 条未在 Top-10 召回；逐查询排名见 `outputs/stage2/dev-original/result.json`。原始模型在这组内部任务上已接近上限，区分方案的能力有限；尚无微调收益、稳定性或外部泛化结论，不修改冻结任务来追求差异。
-
-资源估算与具体未召回查询见 `outputs/stage2/resource-summary.json`，运行版本与配置入口见 [实验摘要](doc/experiments.csv)。旧非确定性短跑曾外推 750 步约 7.3 小时，含评测建议 8–10 小时；这不是新确定性配置的预算承诺。确定性模式的本机校准现已完成，最新估算见下文；不同页面组合、功耗和温度会影响实际耗时，完整 LoRA 开发建库成本尚未实测。此前规定的短跑、恢复及原始模型评测已在一小时计算预算内完成，无需为用满预算重复运行。
-
-2026-09-10 确定性资源校准已完成：代码 `d6e59d7`、运行时工作区干净，使用同一组 32 条查询，seed 42、`batching_version=2`、确定性算法开启。连续 8 步完成 32 次查询展示，自动保存第 4、8 步，未启用梯度检查点。224 个 LoRA 张量更新，损失和梯度有限，冻结范围检查通过；重载向量最大差 0.000318，配套探测索引检索通过。本轮未修改实现，复用此前 9 项 CPU 测试及确定性恢复验证。实际命令如下，已有完整结果，勿覆盖重跑：
-
-```bash
-source scripts/activate_env.sh
+HF_HUB_OFFLINE=1 python -u scripts/audit_negatives.py
+python scripts/prepare_negative_control.py
 HF_HUB_OFFLINE=1 python -u -m foliorecall train \
-  --config configs/lora-baseline.json --data data/vdr-stage2 \
-  --output outputs/stage2/profile-seed42-deterministic \
-  --profile --max-seconds 1800 \
-  > outputs/stage2/profile-seed42-deterministic.log 2>&1
+  --config configs/lora-baseline.json --data data/vdr-stage2-control/original \
+  --output outputs/stage2/negative-control/original --checkpoint-only --max-seconds 5635
 ```
 
-外接电源、平衡电源方案下，每步 24.18–28.20 秒，步骤计算合计 209.16 秒，训练段 213.85 秒，初次模型加载 28.44 秒，完整调用 285.87 秒；剩余 43.58 秒为其他准备、导出与重载等开销。训练峰值分配显存 7.13 GiB；总显存减该值约 886 MiB，还需容纳显示、驱动及分配器预留，不能视为可用余量。未出现 OOM，但未实测所有主训练批次及长时间温度变化。
+评分脚本固定实验目录并拒绝覆盖；实际批次、预算覆盖参数与各次命令以保存记录为准。`train --resume <checkpoint>` 继续支持在同配置、同数据与所属输出目录中恢复，旧组批格式不能按新规则续跑。
 
-按 `213.85 / 8 * 750` 外推训练约 5.57 小时；加初次加载、两次原始开发建库参考共 995.32 秒及查询参考 15.64 秒，合计约 5.86 小时，增加 25% 余量后约 7.32 小时，向上取整建议本机预算 **8 小时**。查询成本使用既有驻留 P95 乘查询数作为参考；确定性 LoRA 的完整开发建库尚未实测，短跑保存开销也按步数外推。该估算仅适用于当前设备和条件，不能据它与历史 7.3 小时的差异声称确定性模式提速。详情和运行提交、配置、样本、日志入口见 [新资源摘要](outputs/stage2/resource-summary-seed42-deterministic.json)，旧摘要保留。
+关键产物：
 
-[页面抽查记录](outputs/stage2/page-spot-check.json) 的 `retrieval_error_review` 已检查全部 13 条非 Top-1 查询的原标页及 Top-1 页。助手视觉判断暂分为：6 条具体证据排序问题，5 条可能存在其他相关页，1 条查询指代含糊，1 条证据不足。例如 NTP 时间、湖泊日期与 D0 公式有具体区分依据；屋顶农业挑战、零工优势及缓存访问可能涉及多页相关。唯一未召回的漫画角色查询缺少作品指代，原标图也没有身份文字。每例保留 ID、排名、两页路径、证据及不确定性；这些判断不是人工真值，没有改动标签，也不据此过滤训练负例。当前证据不足以认定冻结开发任务不可用，保留 200 查询、1,000 页任务；若后续选模受这些争议影响，再作人工复核并在统一标签上重算候选。
-
-2026-09-11 本机首段训练已按预算停止并完成开发评测，进程已退出，监控暂停。有效进度 339/750 步（45.2%）、1,356 次查询展示；224 个 LoRA 张量更新、冻结参数无梯度，未记录非有限损失或梯度错误。检查点 `outputs/stage2/lora/checkpoint-339` 保存适配器、优化器、调度器和随机状态；匹配编码配置 `encoding.json`、完整开发索引 `dev-index`、建库记录 `dev-build.json`、指标与排名 `dev-result.json` 均在检查点内。段结果为 `outputs/stage2/lora/result-step-339.json`，`complete=false`；未达到最终导出与重载探测分支，因此没有 `result.json`，本检查点尚未实际恢复验证，既有小样本恢复验证继续有效。
-
-同一冻结开发任务下，原始模型与 339 步模型的 nDCG@10 为 0.969236 / 0.978095，Recall@5 为 0.995 / 0.990，Recall@10 为 0.995 / 0.995。排序指标小幅上升，Top-5 召回下降；仅为中途内部开发结果，不代表完整基线或稳定泛化收益，不选择教师。此次 1,000 页开发建库实耗 4,597.99 秒（76.63 分钟），明显高于原始参考；训练段统计也包含该评测，不与优化步骤耗时混用。短跑预算估算未能代表主训练实际速度，具体原因尚未核实。
-
-下一步先结合中途结果与资源异常确定续训设备和新增预算，再从 checkpoint-339 接续剩余 411 步；保持原配置、目标 750 步及输出目录，通过 `--resume` 指定检查点。未经新预算确认不续训，不启动错误对照、教师选择或蒸馏。
-
-以下为已结束运行的启动记录：
-
-2026-09-11 00:19（北京时间），用户已授权在本机按 8 小时预算启动 3,000 查询普通 LoRA 基线。后台进程使用 `configs/lora-baseline.json`，从原始模型初始化，seed 42、确定性模式，目标 750 步，第 375、750 步保存并开发评测；`--max-seconds 28800` 在完整步骤后检查，退出保存及评测可能额外耗时。已确认首个优化步骤完成，尚无主训练质量结果。启动记录 `outputs/stage2/lora-launch.json`，日志 `outputs/stage2/lora.log`，配置、实际组批、进度及检查点在 `outputs/stage2/lora`。Codex 定时监控 `foliorecall` 每 30 分钟检查，完成或异常时报告，不自动延长预算。应用需保持运行以执行监控；训练进程独立运行于 WSL，勿关机或关闭 WSL。短跑适配器不参与教师选择，教师与蒸馏尚未启动。
-
-```bash
-source scripts/activate_env.sh
-HF_HUB_OFFLINE=1 python -u -m foliorecall train \
-  --config configs/lora-baseline.json --data data/vdr-stage2 \
-  --output outputs/stage2/lora --max-seconds 28800
-```
-
-上述启动命令仅供历史记录，本段任务已结束，不要从头重复启动。后续读取半程与最终开发结果，再决定错误对照；失败或预算结束时先核实已保存状态，不自动重启。
+- 首个教师及完整编码配置：`outputs/stage2/teacher.json`，采用 `configs/baseline.json` 和匹配的 `indexes/vdr-dev-original`，该索引已复用加载验证。
+- 普通LoRA：`outputs/stage2/lora/checkpoint-750/encoding.json`、同目录 `dev-index` 与 `dev-evaluation/result.json`；三模型逐查询分析在 `outputs/stage2/lora/quality-analysis.json`。
+- 负例审计：`outputs/stage2/page-spot-check.json` 的 `training_negative_review`；评分、20对页面证据与3条替换在 `outputs/stage2/negative-audit`。
+- 环境、确定性短跑及历史中断的配置、版本、耗时与局限统一通过[实验摘要](doc/experiments.csv)和相应运行目录接续，旧产物保留。本机不同运行段曾有明显耗时差异，原因未核实，不作速度收益结论。
 
 ## 本机开发环境
 
