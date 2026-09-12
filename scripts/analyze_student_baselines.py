@@ -9,12 +9,14 @@ from foliorecall.io import read_json, write_json, provenance
 parser = argparse.ArgumentParser()
 parser.add_argument("--names", nargs="+", default=["public-en-cpu", "public-ml-cpu"])
 parser.add_argument("--output", required=True)
+parser.add_argument("--teacher-result", help="Use a newly measured teacher instead of historical quality only")
 args = parser.parse_args()
 output = Path(args.output)
 if output.exists() and any(output.iterdir()):
     raise ValueError("分析输出目录非空")
 teacher = read_json("outputs/stage2/teacher.json")
-reference = read_json(teacher["candidates"]["original"]["result"])
+reference_path = args.teacher_result or teacher["candidates"]["original"]["result"]
+reference = read_json(reference_path)
 baseline = {r["query_id"]: r for r in reference["results"]}
 qrels = read_json("data/vdr-stage2/dev/qrels.json")
 reports, runs, query_changes = {}, {}, {}
@@ -41,16 +43,24 @@ for name in args.names:
     reports[name]["delta_from_teacher"] = {k: result["metrics"][k]-reference["metrics"][k] for k in result["metrics"]}
     reports[name]["queries"] = {"improved": sum(x > 1e-12 for x in changes),
         "worse": sum(x < -1e-12 for x in changes), "unchanged": sum(abs(x) <= 1e-12 for x in changes)}
+    if args.teacher_result and result["device"] == "cuda":
+        conditions = ("device", "dtype", "gpu", "batch_size", "torch_threads", "faiss_threads", "warmups", "repeats")
+        if any(result[k] != reference[k] for k in conditions):
+            raise ValueError("GPU加速比测量条件不同")
+        reports[name]["gpu_encode_speedup_p50"] = reference["encode_seconds"]["p50"] / result["encode_seconds"]["p50"]
+        reports[name]["gpu_request_speedup_p50"] = reference["request_seconds"]["p50"] / result["request_seconds"]["p50"]
     runs[name] = read_json(path / "run.json")
 cases = sorted(query_changes.values(), key=lambda row: (-max(abs(s["delta_ndcg"]) for s in row["students"].values()), row["query_id"]))[:5]
 result = {"teacher": "outputs/stage2/teacher.json", "teacher_metrics": reference["metrics"], "students": reports,
     "comparison_scope": "same frozen 200 English queries and 1000 original-teacher pages; no labels modified",
-    "timing_scope": "CPU/GPU deployment rows separate; historical teacher timing not used for speedup",
+    "teacher_result": reference_path,
+    "timing_scope": "CPU/GPU deployment rows separate; GPU speedup only for a supplied teacher with matching measurement conditions",
     "initialization": "pending both GPU BF16 public baselines", "default_deployment": "pending user choice",
     "limitations": ["single near-ceiling internal task", "upstream public-student VDR overlap unverified",
         "upstream teacher query instruction differs", "original-document isolation unverified"]}
-if len(reports) == 2 and all(row["device"] == "cuda" for row in reports.values()):
-    winner = max(reports, key=lambda name: tuple(reports[name]["metrics"][k] for k in ("nDCG@10", "Recall@10", "Recall@5")) + (int("-ml-" in name),))
+public_gpu = [name for name in ("public-en-cuda", "public-ml-cuda") if name in reports]
+if len(public_gpu) == 2 and all(reports[name]["device"] == "cuda" for name in public_gpu):
+    winner = max(public_gpu, key=lambda name: tuple(reports[name]["metrics"][k] for k in ("nDCG@10", "Recall@10", "Recall@5")) + (int("-ml-" in name),))
     result["initialization"] = {"name": winner, "query_config": runs[winner]["config"]["query_config"],
         "rule": "nDCG@10, Recall@10, Recall@5, then ML on exact tie; not deployment selection"}
 provenance(output, {"names": args.names, "source_runs": runs})
