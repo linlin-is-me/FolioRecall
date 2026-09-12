@@ -1,0 +1,36 @@
+{
+  "kind": "nanovdr",
+  "model_id": "nanovdr/NanoVDR-Q-DistilBERT-Qwen3VL2B-2048",
+  "revision": "ae406c843794bb237a6406b1143ca1a14ec7cb1f",
+  "tokenizer_id": "nanovdr/NanoVDR-Q-DistilBERT-Qwen3VL2B-2048",
+  "tokenizer_revision": "ae406c843794bb237a6406b1143ca1a14ec7cb1f",
+  "device": "cpu",
+  "dtype": "float32",
+  "batch_size": 1,
+  "dimension": 2048,
+  "pooling": "mean",
+  "projection": [
+    768,
+    768,
+    2048
+  ],
+  "normalize": true,
+  "max_length": 512,
+  "prompt": "",
+  "target_encoding_identity": {
+    "model_id": "Qwen/Qwen3-VL-Embedding-2B",
+    "revision": "9f2f7e710d6d81056aa5c0a4f04764fec6bb7bda",
+    "dtype": "bfloat16",
+    "attn_implementation": "sdpa",
+    "dimension": 2048,
+    "prompt": "Represent the user's input.",
+    "pooling": "lasttoken",
+    "normalize": true,
+    "max_length": 8192,
+    "min_pixels": 4096,
+    "max_pixels": 1310720,
+    "adapter": null
+  },
+  "compatibility_note": "Project teacher page preprocessing; upstream teacher query instruction differs; exact upstream teacher revision/image overrides unverified",
+  "seed": 42
+}

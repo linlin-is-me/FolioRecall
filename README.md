@@ -12,6 +12,32 @@ FolioRecall 面向英文视觉文档检索，计划支持 PDF / 页面图像导�
 
 当前任务与下一步见[开发计划第1节](doc/多模态文档检索项目开发计划.md#当前开发重点)。
 
+## 第三阶段：CPU 查询学生已接入
+
+2026-09-12：两款固定版本 NanoVDR 学生已下载并完成 CPU 加载、官方表示对照和完整内部开发评测。新增独立 `--query-config`，查询学生可复用原始教师页面索引；未传该参数时仍使用教师查询。当前按用户要求停在 GPU 计算之前，GPU 基线、教师目标生成和真实学生蒸馏均未启动，默认部署组合未选定。
+
+| CPU FP32 查询学生 | nDCG@10 | Recall@5/10 | 编码 P50/P95 | 完整本地请求 P50/P95 |
+|---|---:|---:|---:|---:|
+| 公开英文版 | 0.970853 | 0.995 / 0.995 | 18.63 / 23.67 ms | 19.03 / 24.08 ms |
+| 公开 `-ML` 版 | 0.972699 | 0.995 / 0.995 | 18.58 / 23.65 ms | 18.98 / 24.01 ms |
+
+两组均使用冻结的200查询、原标签和完整1000页原始教师索引，Ryzen 7 8845H、PyTorch线程4、FAISS线程1、batch1，预热5次、重复3轮；重复排名一致。单模型权重文件约274.13 MB，预热后进程RSS约1.055 GB，评测结束时记录的进程峰值RSS约1.093 GB，包含Python与依赖。计时从常驻模型接收文本到结果JSON就绪，不含进程启动、模型加载或页面渲染；不同硬件的历史教师时间不用于计算加速比。
+
+两款学生相对历史原始教师的原标nDCG分别增加0.001617和0.003463，但这是接近上限的内部任务，公开学生上游包含VDR来源，具体重叠未核实。最大变化5例的10张页面已完成助手复核，机器人表单、宽泛论证问题及零工工作案例仍有相关性解释边界，不修改标签。结果与逐请求时间在 `outputs/stage3/public-{en,ml}-cpu`，比较及复核在 `outputs/stage3/cpu-comparison`。
+
+已验证的CPU查询命令：
+
+```bash
+source scripts/activate_env.sh
+CUDA_VISIBLE_DEVICES= HF_HUB_OFFLINE=1 python -m foliorecall query \
+  --config configs/baseline.json --query-config configs/student-ml-cpu.json \
+  --index indexes/vdr-dev-original 'How did El Niño in 1998 affect Okinawa reefs?' --json
+```
+
+目标缓存与 `distill` 入口已经实现；CPU测试验证分块续接、查询与向量绑定、开发隔离、余弦损失梯度和现有Trainer的向量标签、保存加载及恢复。上述验证不等于真实学生已完成反传或GPU恢复。3000查询清单与10000查询扩充可行性已核对，尚未生成任何真实教师目标或启动扩量。
+
+加载配置、计时协议和待运行命令见[查询学生与蒸馏说明](doc/查询学生与蒸馏.md)。8小时预算由 `scripts/run_stage3_task.py` 累计记录到 `outputs/stage3/budget.json`；当前只有CPU模型任务。GPU工作必须等待用户明确通知，不自动启动。
+
 ## 第二阶段接续
 
 2026-09-12：3,000查询普通LoRA已完成750步及内部开发评测。20对训练负例完成助手视觉审计，固定256查询的原负例／回填负例对照已完成，第二阶段收尾。首个教师按已确认的保守策略选择原始模型，尚未生成蒸馏目标。
@@ -136,7 +162,7 @@ python scripts/check_env.py
 | PyTorch CPU | 32×32 矩阵乘法结果检查通过 |
 | RTX 4060 CUDA | CUDA 可用，32×32 BF16 矩阵乘法及同步后结果检查通过 |
 
-环境稳定且依赖未改变时，直接激活并继续开发，无需重复以上检查。应用功能的实际验证状态见下节；查询学生的 CPU 快速体验尚未实现。
+环境稳定且依赖未改变时，直接激活并继续开发，无需重复以上检查。应用功能的实际验证状态见下节；查询学生的CPU命令见第三阶段说明。
 
 ## 第一阶段命令
 
@@ -197,9 +223,9 @@ HR 使用完整 1110 页候选库与种子 42 抽出的 20 条英文查询，保
 
 ## 使用范围与上游来源说明
 
-首版先接入英文页面检索，中文、答案生成、重排序及候选方法按开发计划择需启用。GPU 建库和训练以实际验证记录为准；使用查询学生的 CPU 快速体验路径尚未实现。
+首版先接入英文页面检索，中文、答案生成、重排序及候选方法按开发计划择需启用。GPU建库和训练以实际验证记录为准；公开学生的CPU查询已验证，本项目继续蒸馏尚未运行。
 
-编码与训练接入 [Qwen3-VL-Embedding](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) 和 [Sentence Transformers](https://github.com/huggingface/sentence-transformers) 的现成接口，精确搜索使用 [FAISS](https://github.com/facebookresearch/faiss)。本项目实现导入元数据、命令行、数据筛选与划分、索引配置匹配及检查脚本；尚未取得训练收益证据。NanoVDR 的查询学生与效率评测适配留待后续阶段。
+编码与训练接入 [Qwen3-VL-Embedding](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) 和 [Sentence Transformers](https://github.com/huggingface/sentence-transformers) 的现成接口，精确搜索使用 [FAISS](https://github.com/facebookresearch/faiss)。本项目实现导入元数据、命令行、数据筛选与划分、索引配置匹配、查询学生接入及评测。普通LoRA已有原标内部开发收益，稳定性与外部泛化尚未验证。NanoVDR采用其发布的2B教师配套学生与原结构，本地余弦蒸馏入口属于适配，尚未形成训练结果；上游来源与兼容边界见第三阶段说明。
 
 ## 开发文档
 

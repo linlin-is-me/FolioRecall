@@ -15,6 +15,25 @@ def main():
     imp.add_argument("--image-manifest")
     imp.add_argument("--output", required=True)
     imp.add_argument("--dpi", type=int, default=150)
+    cache = sub.add_parser("cache-teacher")
+    cache.add_argument("--teacher", default="outputs/stage2/teacher.json")
+    cache.add_argument("--data", default="data/vdr-stage2")
+    cache.add_argument("--output", required=True)
+    cache.add_argument("--count", type=int, default=3000)
+    cache.add_argument("--stop-after", type=int)
+    cache.add_argument("--max-seconds", type=float, default=3600)
+    student_train = sub.add_parser("distill")
+    student_train.add_argument("--query-config", required=True)
+    student_train.add_argument("--targets", required=True)
+    student_train.add_argument("--output", required=True)
+    student_train.add_argument("--index", default="indexes/vdr-dev-original")
+    student_train.add_argument("--data", default="data/vdr-stage2/dev")
+    student_train.add_argument("--limit", type=int)
+    student_train.add_argument("--max-steps", type=int)
+    student_train.add_argument("--micro-batch", type=int, default=32)
+    student_train.add_argument("--max-seconds", type=float, default=3600)
+    student_train.add_argument("--resume")
+    student_train.add_argument("--skip-evaluation", action="store_true", help="Only for the initial four-step integration probe")
     for name in ("index", "query", "evaluate", "train-smoke", "train"):
         command = sub.add_parser(name)
         command.add_argument("--config", default="configs/lora-baseline.json" if name == "train" else "configs/baseline.json")
@@ -23,6 +42,7 @@ def main():
             command.add_argument("--output", required=True)
         elif name in ("query", "evaluate"):
             command.add_argument("--index", required=True)
+            command.add_argument("--query-config")
             if name == "query":
                 command.add_argument("text")
                 command.add_argument("--top-k", type=int, default=5)
@@ -30,6 +50,7 @@ def main():
             else:
                 command.add_argument("--data", default="data/hr")
                 command.add_argument("--output", required=True)
+                command.add_argument("--benchmark", action="store_true")
         else:
             command.add_argument("--data", default="data/vdr-stage2" if name == "train" else "data/vdr")
             command.add_argument("--output", required=True)
@@ -41,12 +62,23 @@ def main():
                 command.add_argument("--max-seconds", type=float, default=3600)
                 command.add_argument("--checkpoint-only", action="store_true", help="Save checkpoints without development evaluation or final encoding probes")
     args = parser.parse_args()
+    if args.command == "cache-teacher":
+        from .targets import cache_teacher
+        print(json.dumps(cache_teacher(args.teacher, args.data, args.output, args.count, args.stop_after, args.max_seconds), indent=2))
+        return 0
+    if args.command == "distill":
+        from .distillation import distill
+        result = distill(read_json(args.query_config), args.targets, args.output, args.index, args.data,
+            args.limit, args.max_steps, args.micro_batch, args.max_seconds, args.resume, not args.skip_evaluation)
+        print(json.dumps({k: v for k, v in result.items() if k != "log_history"}, indent=2))
+        return 0
     if args.command == "import":
         from .documents import import_documents
         result = import_documents(args.inputs, args.output, args.dpi, args.image_manifest)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result["pages"] else 1
     config = read_json(args.config)
+    query_config = read_json(args.query_config) if getattr(args, "query_config", None) else config
     if args.command == "train":
         from .trainer import train
         if args.gradient_checkpointing:
@@ -76,6 +108,9 @@ def main():
         return 0
     from .search import load_index, save_index, search
     if args.command in ("query", "evaluate"):
+        if getattr(args, "query_config", None):
+            from .query import validate_query_config
+            validate_query_config(query_config, config)
         index, pages = load_index(args.index, config)
         if args.command == "evaluate":
             from .evaluation import validate_candidate_corpus
@@ -88,9 +123,23 @@ def main():
         if not pages:
             raise ValueError("页面清单为空")
     if args.command != "query":
-        provenance(args.output, config)
+        if args.command == "evaluate" and (Path(args.output) / "result.json").exists():
+            raise ValueError("评测结果已存在，请使用新输出目录")
+        provenance(args.output, {"page_config": config, "query_config": query_config} if getattr(args, "query_config", None) else config)
     from .encoding import load_encoder, encode_pages, encode_queries
-    model = load_encoder(config)
+    loading_started = time.perf_counter()
+    if args.command in ("query", "evaluate"):
+        from .query import load_query_encoder
+        if getattr(args, "benchmark", False) or getattr(args, "query_config", None):
+            import torch
+            import faiss
+            torch.set_num_threads(4)
+            torch.set_num_interop_threads(1)
+            faiss.omp_set_num_threads(1)
+        model = load_query_encoder(query_config)
+    else:
+        model = load_encoder(config)
+    loading_seconds = time.perf_counter() - loading_started
     if args.command == "index":
         import torch
         from PIL import Image
@@ -113,9 +162,10 @@ def main():
         write_json(Path(args.output) / "build.json", result)
         print(json.dumps(result, indent=2))
     elif args.command == "query":
-        result = search(index, pages, encode_queries(model, [args.text], config), args.top_k)[0]
+        from .query import retrieve
+        result, payload, _ = retrieve(model, query_config, index, pages, args.text, args.top_k)
         if args.json:
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            print(payload)
         else:
             for rank, row in enumerate(result, 1):
                 print(f"{rank}. {row.get('document_name', row['doc_id'])} | page {row['page_number']} | {row['score']:.6f}")
@@ -123,12 +173,19 @@ def main():
     else:
         from .evaluation import evaluate
         data = Path(args.data)
-        result = evaluate(model, config, index, pages, read_rows(data / "queries.jsonl"), read_json(data / "qrels.json"))
+        if args.benchmark or args.query_config:
+            from .query import benchmark
+            result = benchmark(model, query_config, index, pages, read_rows(data / "queries.jsonl"), read_json(data / "qrels.json"),
+                warmups=5 if args.benchmark else 1, repeats=3 if args.benchmark else 1)
+            result["model_loading_seconds"] = loading_seconds
+            result["index_bytes"] = sum(p.stat().st_size for p in Path(args.index).iterdir() if p.is_file())
+        else:
+            result = evaluate(model, config, index, pages, read_rows(data / "queries.jsonl"), read_json(data / "qrels.json"))
         if (data / "source.json").exists():
             result["dataset"] = read_json(data / "source.json")
             result["scope"] = result["dataset"].get("scope", result["scope"])
         write_json(Path(args.output) / "result.json", result)
-        print(json.dumps({k: v for k, v in result.items() if k != "results"}, indent=2))
+        print(json.dumps({k: v for k, v in result.items() if k not in {"results", "requests", "dataset"}}, indent=2))
     return 0
 
 
