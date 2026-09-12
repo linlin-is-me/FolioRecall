@@ -7,10 +7,21 @@ import numpy as np
 import torch
 from torch import nn
 
-from foliorecall.distillation import QueryAlignmentLoss
+from foliorecall.distillation import QueryAlignmentLoss, projection_parameter_names
 from foliorecall.io import write_json, write_rows, read_json
 from foliorecall.search import encoding_identity
 from foliorecall.targets import training_queries, cache_teacher, load_targets
+
+
+class ProjectionNamesTests(unittest.TestCase):
+    def test_published_module_names_are_resolved_by_parameter_identity(self):
+        from collections import OrderedDict
+        from sentence_transformers.models import Dense
+        model = nn.Sequential(OrderedDict([
+            ("0_Transformer", nn.Identity()), ("1_Pooling", nn.Identity()),
+            ("2_Dense", Dense(4, 4)), ("3_Dense", Dense(4, 3))]))
+        self.assertEqual(projection_parameter_names(model),
+                         {"2_Dense.linear.weight", "3_Dense.linear.weight"})
 
 
 class TargetTests(unittest.TestCase):

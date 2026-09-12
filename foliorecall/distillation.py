@@ -15,7 +15,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from .io import read_json, write_json, write_rows, read_rows, provenance
-from .query import load_query_encoder, encode_query_texts, validate_query_config
+from .query import load_query_encoder, encode_query_texts, validate_query_config, process_memory
 from .targets import load_targets
 
 
@@ -36,6 +36,15 @@ class QueryAlignmentLoss(nn.Module):
 
     def get_config_dict(self):
         return {"objective": "mean(1-cosine(student, cached_teacher_query))"}
+
+
+def projection_parameter_names(model):
+    """Published ST packages may name modules 2_Dense instead of 2."""
+    weights = {id(model[i].linear.weight) for i in (2, 3)}
+    names = {name for name, parameter in model.named_parameters() if id(parameter) in weights}
+    if len(names) != 2:
+        raise ValueError("未找到完整的两层投影权重")
+    return names
 
 
 def distill(query_config, targets, output, index, data, limit=None, max_steps=None,
@@ -84,9 +93,11 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
     if resume:
         train_config["model_path"] = str(resume)
     model = load_query_encoder(train_config)
+    torch.cuda.reset_peak_memory_stats()
     loading_seconds = time.monotonic()-started
+    projection_names = projection_parameter_names(model)
     selected = {name: p.detach().cpu().clone() for name, p in model.named_parameters()
-        if name.endswith("attention.q_lin.weight") or name in ("2.linear.weight", "3.linear.weight")}
+        if name.endswith("attention.q_lin.weight") or name in projection_names}
     if not selected or not all(p.requires_grad for p in model.parameters()):
         raise ValueError("学生骨干或投影未加入训练")
     dataset = Dataset.from_dict({"query": [r["query"] for r in rows], "label": vectors.tolist()})
@@ -102,7 +113,9 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
                 if any(g is None or not torch.isfinite(g).all() for g in gradients.values()):
                     raise ValueError("学生存在缺失或非有限梯度")
                 nonzero = {name for name, g in gradients.items() if torch.count_nonzero(g).item() > 0}
-                if not any("attention.q_lin" in n for n in nonzero) or not all(n in nonzero for n in ("2.linear.weight", "3.linear.weight")):
+                write_json(run / "gradient-probe.json", {name: {"max_abs": float(g.abs().max()),
+                    "nonzero": name in nonzero} for name, g in gradients.items()})
+                if not any("attention.q_lin" in n for n in nonzero) or not projection_names.issubset(nonzero):
                     raise ValueError("骨干或投影没有有效梯度")
                 gradient_checks.append({"finite_gradients": len(gradients), "nonzero_gradients": len(nonzero)})
 
@@ -152,7 +165,7 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
         write_json(final / "query-config.json", export_config)
         after = dict(model.named_parameters())
         updated = [name for name, value in selected.items() if not torch.equal(value, after[name].detach().cpu())]
-        if not any("attention.q_lin" in name for name in updated) or not all(name in updated for name in ("2.linear.weight", "3.linear.weight")):
+        if not any("attention.q_lin" in name for name in updated) or not projection_names.issubset(updated):
             raise ValueError("骨干或投影未实际更新")
         # A small CPU roundtrip is independent of BF16 inference rounding.
         model.to(device="cpu", dtype=torch.float32).eval()
@@ -166,6 +179,9 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
         result = {"complete": trainer.state.global_step >= trainer.state.max_steps,
             "completed_steps": trainer.state.global_step, "target_steps": trainer.state.max_steps,
             "seconds": time.monotonic()-started, "loading_seconds": loading_seconds,
+            "peak_cuda_bytes": torch.cuda.max_memory_allocated(),
+            "peak_cuda_reserved_bytes": torch.cuda.max_memory_reserved(),
+            "final_memory": process_memory(),
             "gradient_checks": gradient_checks, "checked_updated_tensors": updated,
             "reload_max_abs_diff": delta, "evaluations": evaluations, "log_history": trainer.state.log_history,
             "training_dtype": "FP32 master weights, BF16 autocast", "final": str(final),
