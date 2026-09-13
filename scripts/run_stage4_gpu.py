@@ -1,4 +1,4 @@
-"""One explicitly enabled GPU job, with a separate ten-hour stage-four budget."""
+"""One explicitly enabled GPU job, preserving the authorized stage-four ledger."""
 import argparse
 import math
 import os
@@ -40,9 +40,14 @@ def main():
         if any(not math.isfinite(r['seconds']) or r['seconds'] < 0 for r in records):
             raise ValueError('GPU预算记录含无效耗时，请先核对既有记录')
         used = sum(r['seconds'] for r in records)
+        budget_file = root / 'budget.json'
+        budget = read_json(budget_file) if budget_file.exists() else {}
+        limit = budget.get('limit_seconds', 36000)
+        if not isinstance(limit, (int, float)) or not math.isfinite(limit) or limit <= 0:
+            raise ValueError('GPU预算上限无效，请核对已授权账本')
         reserve = 0 if args.use_reserve else 3600
         # Reserve two minutes for cooperative checkpointing and process cleanup.
-        hard_limit = min(args.max_seconds, 36000 - used - reserve)
+        hard_limit = min(args.max_seconds, limit - used - reserve)
         if hard_limit <= 120:
             raise ValueError('剩余GPU预算不足；保留缓存，等待新的资源安排')
         status = subprocess.check_output(['nvidia-smi', '--query-compute-apps=pid,process_name', '--format=csv,noheader'], text=True)
@@ -52,7 +57,7 @@ def main():
         if output.exists():
             raise ValueError('运行名已存在，请为续接或重测使用新名称')
         gpu = subprocess.check_output(['nvidia-smi', '--query-gpu=name,memory.total,power.draw,temperature.gpu,driver_version', '--format=csv'], text=True)
-        provenance(output, {'command': args.command, 'budget_seconds': 36000, 'used_before': used,
+        provenance(output, {'command': args.command, 'budget_seconds': limit, 'used_before': used,
             'hard_limit_seconds': hard_limit, 'reserve_seconds': reserve, 'device_snapshot': gpu,
             'user_gpu_window_confirmed': True})
         env = dict(os.environ, CUDA_VISIBLE_DEVICES='0', OMP_NUM_THREADS='4', MKL_NUM_THREADS='4',
@@ -88,8 +93,8 @@ def main():
                 'seconds': seconds, 'reason': reason, 'ended_unix': time.time(),
                 'scope': 'whole GPU-enabled child process including loading and idle residence; CPU/download/development excluded'}
             write_json(output / 'process.json', record)
-            atomic_json(root / 'budget.json', {'limit_seconds': 36000, 'used_seconds': used + seconds,
-                'remaining_seconds': max(0, 36000-used-seconds), 'last_run': str(output)})
+            atomic_json(budget_file, dict(budget, limit_seconds=limit, used_seconds=used + seconds,
+                remaining_seconds=max(0, limit-used-seconds), last_run=str(output)))
         print(record, flush=True)
         return code
 
