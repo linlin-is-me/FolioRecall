@@ -1,0 +1,145 @@
+"""Pinned ViDoRe corpora; no sampling of candidates or modification of qrels."""
+import io
+import math
+from pathlib import Path
+import time
+
+from .io import provenance, read_json, read_rows, write_json, write_rows
+
+
+def validate_task(pages, queries, qrels, expected):
+    ids = [p['page_id'] for p in pages]
+    query_ids = [q['query_id'] for q in queries]
+    if len(ids) != len(set(ids)) or len(query_ids) != len(set(query_ids)):
+        raise ValueError('页面或查询 ID 重复')
+    if len(pages) != expected['pages'] or len(queries) != expected['english_queries']:
+        raise ValueError(f'任务数量不符: {len(pages)} pages, {len(queries)} queries')
+    if set(qrels) != set(query_ids):
+        raise ValueError('查询与标签 ID 不一致')
+    candidates = set(ids)
+    for qid, relevance in qrels.items():
+        if not set(relevance).issubset(candidates):
+            raise ValueError(f'qrels 引用了候选库外页面: {qid}')
+        if not any(score > 0 for score in relevance.values()):
+            raise ValueError(f'查询无正相关标签: {qid}')
+        if any(not math.isfinite(score) or score < 0 for score in relevance.values()):
+            raise ValueError('相关性等级无效')
+
+
+def prepare_task(task, output, training_queries, hr_reuse='data/hr'):
+    import pyarrow.parquet as pq
+    from PIL import Image
+    from huggingface_hub import HfApi, hf_hub_download, try_to_load_from_cache
+    from .data_preparation import normalized_query
+    output = Path(output)
+    completed = output / 'source.json'
+    if completed.exists():
+        source = read_json(completed)
+        if source['task'] != task:
+            raise ValueError('已有数据集配置不符，请使用新目录')
+        validate_task(read_rows(output / 'pages.jsonl'), read_rows(output / 'queries.jsonl'),
+                      read_json(output / 'qrels.json'), task)
+        print(f"{task['name']}: complete, reused", flush=True)
+        return source
+    output.mkdir(parents=True, exist_ok=True)
+    manifest = output / 'preparation-config.json'
+    if manifest.exists() and read_json(manifest) != task:
+        raise ValueError('未完成目录的固定版本不符')
+    write_json(manifest, task)
+    provenance(output / 'runs' / str(time.time_ns()), task)
+    started = time.perf_counter()
+    files = HfApi().list_repo_files(task['dataset'], repo_type='dataset', revision=task['revision'])
+    files = sorted(f for f in files if f.endswith('.parquet') and
+                   f.split('/')[0] in ('corpus', 'queries', 'qrels', 'documents_metadata'))
+    groups = {key: [] for key in ('corpus', 'queries', 'qrels', 'documents_metadata')}
+    sources = []
+    for filename in files:
+        cached = try_to_load_from_cache(task['dataset'], filename, repo_type='dataset', revision=task['revision'])
+        was_cached = isinstance(cached, str) and Path(cached).is_file()
+        print(f"{task['name']}: {'reuse' if was_cached else 'download'} {filename}", flush=True)
+        path = Path(hf_hub_download(task['dataset'], filename, repo_type='dataset', revision=task['revision']))
+        groups[filename.split('/')[0]].append(path)
+        sources.append({'file': filename, 'path': str(path), 'bytes': path.stat().st_size, 'already_cached': was_cached})
+    download_seconds = time.perf_counter() - started
+    if any(not groups[key] for key in ('corpus', 'queries', 'qrels')):
+        raise ValueError('数据源缺少 corpus / queries / qrels')
+    reuse = {}
+    hr_reuse = Path(hr_reuse)
+    if task['name'] == 'hr' and (hr_reuse / 'source.json').exists():
+        if read_json(hr_reuse / 'source.json')['revision'] == task['revision']:
+            reuse = {p['page_id']: p for p in read_rows(hr_reuse / 'pages.jsonl')}
+    pages, texts = [], []
+    images = output / 'images'
+    images.mkdir(exist_ok=True)
+    for path in groups['corpus']:
+        parquet = pq.ParquetFile(path)
+        columns = None if not reuse else [c for c in parquet.schema_arrow.names if c != 'image']
+        for batch in parquet.iter_batches(batch_size=8, columns=columns):
+            for row in batch.to_pylist():
+                pid, doc_id = str(row['corpus_id']), str(row['doc_id'])
+                if pid in reuse:
+                    preview = Path(reuse[pid]['preview'])
+                    if not preview.is_file():
+                        raise ValueError(f'已有 HR 预览缺失: {preview}')
+                else:
+                    raw = row['image']['bytes']
+                    with Image.open(io.BytesIO(raw)) as image:
+                        extension = {'JPEG': '.jpg', 'PNG': '.png', 'WEBP': '.webp'}.get(image.format)
+                        if not extension:
+                            raise ValueError(f'未支持的原始图像格式: {image.format}')
+                        image.verify()
+                    # The corpus row, not an untrusted upstream ID, determines the filename.
+                    preview = images / f'{len(pages):06d}{extension}'
+                    if not preview.exists():
+                        preview.write_bytes(raw)
+                filename = doc_id if doc_id.endswith('.pdf') else doc_id + '.pdf'
+                pages.append({'page_id': pid, 'row_index': len(pages), 'doc_id': doc_id,
+                    'page_number': int(row['page_number_in_doc']) + 1,
+                    'dataset_page_number': row['page_number_in_doc'], 'preview': str(preview.resolve()),
+                    'source': f"https://huggingface.co/datasets/{task['dataset']}/resolve/{task['revision']}/pdfs/{filename}",
+                    'document_name': filename})
+                texts.append({'page_id': pid, 'text': row.get('markdown') or ''})
+            if len(pages) % 200 == 0:
+                print(f"{task['name']}: prepared {len(pages)} pages", flush=True)
+    all_queries = [row for p in groups['queries'] for row in pq.read_table(p).to_pylist()]
+    queries = [dict(row, query_id=str(row['query_id'])) for row in all_queries
+               if str(row['language']).casefold() in ('en', 'english')]
+    queries.sort(key=lambda row: row['query_id'])
+    qrels = {row['query_id']: {} for row in queries}
+    for p in groups['qrels']:
+        for row in pq.read_table(p).to_pylist():
+            qid, pid, score = str(row['query_id']), str(row['corpus_id']), float(row['score'])
+            if qid in qrels:
+                if pid in qrels[qid]:
+                    raise ValueError(f'重复 qrel: {qid}/{pid}')
+                qrels[qid][pid] = score
+    validate_task(pages, queries, qrels, task)
+    overlap = [q['query_id'] for q in queries if normalized_query(q['query']) in training_queries]
+    write_rows(output / 'pages.jsonl', pages)
+    write_rows(output / 'texts.jsonl', texts)
+    write_rows(output / 'queries.jsonl', queries)
+    write_json(output / 'qrels.json', qrels)
+    source = {'task': task, 'dataset': task['dataset'], 'revision': task['revision'],
+        'scope': 'fixed external English queries; complete task corpus; no external tuning',
+        'queries': len(queries), 'candidates': len(pages), 'sources': sources,
+        'source_bytes': sum(f['bytes'] for f in sources),
+        'new_source_file_bytes': sum(f['bytes'] for f in sources if not f['already_cached']),
+        'extracted_image_bytes': sum(p.stat().st_size for p in images.iterdir() if p.is_file()),
+        'reused_hr_pages': len(reuse), 'download_seconds': download_seconds,
+        'preparation_seconds': time.perf_counter() - started - download_seconds,
+        'normalized_training_query_overlap': overlap,
+        'limitations': ['Full task retained even if an overlap is found; upstream training overlap and document-level isolation unverified'] +
+            (['20 HR queries were previously used for flow checks; remaining HR queries were not selected by score'] if task['name'] == 'hr' else [])}
+    write_json(completed, source)
+    print(f"{task['name']}: {len(pages)} pages, {len(queries)} queries complete", flush=True)
+    return source
+
+
+def prepare_benchmark(config, output, training_data='data/vdr-stage2', task_name=None):
+    from .data_preparation import normalized_query
+    split = read_json(Path(training_data) / 'split.json')
+    training_queries = {normalized_query(row['query']) for row in split['train']}
+    selected = [t for t in config['tasks'] if task_name is None or t['name'] == task_name]
+    if not selected:
+        raise ValueError('未知任务名')
+    return [prepare_task(task, Path(output) / task['name'], training_queries) for task in selected]

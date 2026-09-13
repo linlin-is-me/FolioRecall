@@ -20,6 +20,8 @@ def validate_candidate_corpus(index_pages, corpus_pages):
 def metrics(ranked_ids, relevance):
     if len(ranked_ids) != len(set(ranked_ids)):
         raise ValueError("排名包含重复页面")
+    if any(not math.isfinite(float(value)) or float(value) < 0 for value in relevance.values()):
+        raise ValueError("相关性等级必须是有限非负数")
     positives = {str(key): float(value) for key, value in relevance.items() if value > 0}
     if not positives:
         raise ValueError("查询没有正相关标签")

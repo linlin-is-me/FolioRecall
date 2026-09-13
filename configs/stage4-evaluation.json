@@ -1,0 +1,16 @@
+{
+  "scope": "ViDoRe V3 five English-page domains; all English queries and complete task corpora",
+  "tasks": [
+    {"name": "hr", "dataset": "vidore/vidore_v3_hr", "revision": "0cdf0979f2c5a0fd3e335e6373b9da48a9fe3bc3", "pages": 1110, "english_queries": 318},
+    {"name": "computer_science", "dataset": "vidore/vidore_v3_computer_science", "revision": "d5cc75883d92e294f0c0fc2662551c9708a06ebc", "pages": 1360, "english_queries": 215},
+    {"name": "finance_en", "dataset": "vidore/vidore_v3_finance_en", "revision": "7f432c176d82e27546501ad8064a713ac3071809", "pages": 2942, "english_queries": 309},
+    {"name": "industrial", "dataset": "vidore/vidore_v3_industrial", "revision": "e26c864724f5dd71a3d7d739272d95637764cee9", "pages": 5244, "english_queries": 283},
+    {"name": "pharmaceuticals", "dataset": "vidore/vidore_v3_pharmaceuticals", "revision": "3abd4aa8a9445fb5538a78a19ba50bd57bd22b5c", "pages": 2313, "english_queries": 364}
+  ],
+  "bm25": {"k1": 1.5, "b": 0.75, "epsilon": 0.25, "tokenization": "NFKC + casefold + Unicode \\w+; no stemming or stopword removal"},
+  "protocol": {"warmups": 5, "repeats": 3, "torch_threads": 4, "faiss_threads": 1, "batch_size": 1},
+  "gpu_candidates": ["original", "lora750", "public-en", "public-ml", "distilled94"],
+  "cpu_candidates": ["public-en", "public-ml", "distilled94"],
+  "default_deployment": "public-ml GPU BF16; original teacher page index",
+  "gpu_status": "waiting for user notification and a new compute budget"
+}

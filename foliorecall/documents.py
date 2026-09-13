@@ -1,5 +1,6 @@
 from pathlib import Path
 import uuid
+import time
 
 from PIL import Image
 
@@ -22,6 +23,7 @@ def validate_pages(rows):
 
 
 def import_documents(inputs, output, dpi=150, image_manifest=None):
+    started = time.perf_counter()
     try:
         import pypdfium2 as pdfium
     except ImportError as exc:
@@ -91,4 +93,8 @@ def import_documents(inputs, output, dpi=150, image_manifest=None):
     validate_pages(rows)
     write_rows(output / "pages.jsonl", rows)
     write_json(output / "import-errors.json", errors)
-    return {"pages": len(rows), "errors": errors, "manifest": str(output / "pages.jsonl")}
+    result = {"pages": len(rows), "errors": errors, "manifest": str(output / "pages.jsonl"),
+              "seconds": time.perf_counter() - started, "dpi": dpi,
+              "timing_scope": "input validation, PDF/image rendering or cache reuse, and manifest save"}
+    write_json(output / "import-result.json", result)
+    return result
