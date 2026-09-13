@@ -6,7 +6,7 @@ import sys
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from foliorecall.io import provenance, read_json, write_json
+from foliorecall.io import provenance, read_json, read_rows, write_json, write_rows
 from export_demo_bundle import write_quickstart
 from export_stage4_models import add_release_links
 
@@ -46,10 +46,12 @@ def record(source, destination, sources, *, verbatim=False):
     destination.parent.mkdir(parents=True, exist_ok=True)
     if source.suffix == '.json' and not verbatim:
         write_json(destination, public_result(read_json(source)))
+    elif source.suffix == '.jsonl' and not verbatim:
+        write_rows(destination, public_result(read_rows(source)))
     else:
         shutil.copyfile(source, destination)
     sources.append({'original': str(source), 'published': str(destination),
-                    'transformation': 'verbatim' if verbatim or source.suffix != '.json'
+                    'transformation': 'verbatim' if verbatim or source.suffix not in {'.json', '.jsonl'}
                     else 'omit query/text/markdown/preview fields; query text lists become counts; other numbers and IDs unchanged'})
 
 
@@ -163,12 +165,19 @@ def finalize(output):
     if not validation.get('passed'):
         raise ValueError('尚未通过本轮CPU安装和展示验证')
     sources = read_json(evidence / 'sources.json')
-    for file in sorted((output / 'validation').rglob('*.json')):
+    for file in sorted((output / 'validation').rglob('*')):
+        if not file.is_file() or file.suffix not in {'.json', '.jsonl', '.png', '.patch', '.py', '.toml', '.sh', '.cjs'}:
+            continue
         destination = evidence / 'validation/release-cpu' / file.relative_to(output / 'validation')
         record(file, destination, sources)
         sources[-1]['published'] = str(destination.relative_to(evidence))
-    write_json(evidence / 'sources.json', sources)
-    run_records(output / 'build', evidence / 'package-build', [])
+    extra = []
+    run_records(output / 'build', evidence / 'package-build', extra)
+    run_records(output / 'preparation', evidence / 'release-preparation', extra)
+    run_records(output / 'preparation/query-text-correction', evidence / 'release-preparation/query-text-correction', extra)
+    for item in extra:
+        item['published'] = str(Path(item['published']).relative_to(evidence))
+    write_json(evidence / 'sources.json', sources + extra)
     archive(evidence)
     names = ['foliorecall-0.1.0rc2-py3-none-any.whl', 'foliorecall-0.1.0rc2.tar.gz',
              'demo-bundle.zip', 'lora750.zip', 'distilled94.zip', 'experiment-evidence.zip']
