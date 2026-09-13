@@ -10,6 +10,19 @@ from foliorecall.io import provenance, read_json, write_json, write_rows
 from foliorecall.search import load_index
 
 
+def write_quickstart(output):
+    (Path(output) / 'QUICKSTART.md').write_text(
+        '# FolioRecall 42页示例\n\n从已安装foliorecall[demo]的环境中进入本目录。'
+        '先按[使用说明](https://github.com/linlin-is-me/FolioRecall/blob/v0.1.0rc2/doc/首版使用与评测.md)'
+        '获取固定revision的公开ML学生；初次下载后可离线查询。\n\n'
+        '```bash\n# CPU体验，仅加载学生\n'
+        'CUDA_VISIBLE_DEVICES= foliorecall serve --index . --config configs/baseline.json --query-config configs/student-ml-cpu.json\n'
+        '# 已选定的GPU部署；已有安装态GPU验证，导出操作不重复模型验证\n'
+        'foliorecall serve --index . --config configs/baseline.json --query-config configs/student-ml-cuda.json\n```\n\n'
+        '访问http://127.0.0.1:7860；修改配置后重启。素材来源与限制见SOURCES.md，'
+        '许可核对和验证记录见experiment-evidence.zip。本地候选不代表已公开发布。\n', encoding='utf-8')
+
+
 def export_bundle(index_path, source_records, output):
     import faiss
     import numpy as np
@@ -61,12 +74,7 @@ def export_bundle(index_path, source_records, output):
         '非欧盟版权所有内容仍受各自权利约束。公开上传前须核对最终素材。\n\n'
         '修改：PDF 以 150 DPI 转 PNG；筛选上述 42 页并复用对应教师向量。保留原始物理页码。'
         '本包不包含原始 PDF，也不包含学生或教师权重。项目代码 Apache-2.0 不覆盖这些文档素材。\n', encoding='utf-8')
-    (output / 'QUICKSTART.md').write_text(
-        '# 本地候选示例\n\n在已安装 foliorecall[demo] 的环境中，从本目录运行：\n\n'
-        '```bash\n# CPU 快速体验（仅需固定 ML 学生包）\n'
-        'CUDA_VISIBLE_DEVICES= foliorecall serve --index . --config configs/baseline.json --query-config configs/student-ml-cpu.json\n'
-        '# 已选定的 GPU 默认部署；本轮尚未进行应用 GPU 验证\n'
-        'foliorecall serve --index . --config configs/baseline.json --query-config configs/student-ml-cuda.json\n```\n', encoding='utf-8')
+    write_quickstart(output)
     # Provenance is separate from the redistributable bundle; it may contain local paths.
     provenance(output.parent / (output.name + '-export-run'), {'index': str(index_path), 'excluded': excluded})
     with zipfile.ZipFile(output.with_suffix('.zip'), 'x', zipfile.ZIP_DEFLATED) as archive:

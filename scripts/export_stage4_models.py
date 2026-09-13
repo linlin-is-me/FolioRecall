@@ -9,6 +9,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from foliorecall.io import provenance, read_json, write_json
 
 
+def add_release_links(target, tag):
+    """Annotate a copied model package without changing its loading configuration."""
+    target = Path(target)
+    base = 'https://github.com/linlin-is-me/FolioRecall'
+    source = read_json(target / 'source.json')
+    source.update(release_tag=tag,
+                  results_url=f'{base}/blob/{tag}/doc/首版使用与评测.md',
+                  evidence_url=f'{base}/releases/download/{tag}/experiment-evidence.zip',
+                  historical_paths='checkpoint, formal_summary and export_run identify original local evidence; use evidence archive sources.json for portable references')
+    write_json(target / 'source.json', source)
+    with (target / 'README.md').open('a', encoding='utf-8') as stream:
+        stream.write(f'\n## 公开获取与证据\n\n目标版本：{tag}，实际发布状态以'
+                     f'[Release]({base}/releases/tag/{tag})为准。'
+                     f'[完整结果]({source["results_url"]})；'
+                     f'[实验附件]({source["evidence_url"]})包含实际运行版本、生效配置与加载验证记录。'
+                     'source.json中的旧路径用于追溯历史，不要求在新机器创建同名目录。\n')
+
+
 def export(output, summary=None):
     output = Path(output)
     if output.exists():
