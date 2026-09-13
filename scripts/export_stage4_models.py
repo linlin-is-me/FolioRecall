@@ -61,9 +61,9 @@ def export(output, summary=None):
         (target / 'README.md').write_text(f'---\nlicense: apache-2.0\nbase_model: {base}\n---\n\n# FolioRecall {name} 本地待发布候选\n\n{findings}\n\n{instructions}\n\n'
             '页面教师基础模型：Qwen/Qwen3-VL-Embedding-2B，revision '+teacher['revision']+'。查询学生的公开ML初始化：nanovdr/NanoVDR-Q-DistilBERT-Qwen3VL2B-2048-ML，revision ab3f0fde9fcf407eaa756e1fc349ac09b7a716e7；LoRA750本身从Qwen教师初始化。\n\n'
             '项目代码Apache-2.0不变更上游模型或训练数据许可。上游来源及声明见UPSTREAM.md，许可文本见LICENSE。训练数据不随包分发，上游训练及文档级重叠尚未完全核实。\n\n'
-            '本次只复制加载所需文件和来源说明，不包含优化器、训练数据或完整教师权重。原检查点已验证，本次新包的GPU加载待资源时段验证；未上传模型。\n', encoding='utf-8')
+            '本次只复制加载所需文件和来源说明，不包含优化器、训练数据或完整教师权重。加载验证结果单独保存在阶段四实验记录，导出动作本身不代表验证通过或已经公开发布。\n', encoding='utf-8')
         write_json(target / 'source.json', {'checkpoint': str(source), 'teacher_revision': teacher['revision'],
-            'status': 'local candidate; GPU package validation and publication pending',
+            'status': 'local candidate; package validation recorded separately; publication pending',
             'formal_summary': summary,
             'export_run': str(output / 'export-run/run.json')})
         with zipfile.ZipFile(output / f'{name}.zip', 'x', zipfile.ZIP_DEFLATED) as archive:
