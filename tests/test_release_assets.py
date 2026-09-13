@@ -23,6 +23,8 @@ class ReleaseAssetsTests(unittest.TestCase):
         self.assertEqual(result['results'][0]['nDCG@10'], 0.125)
         self.assertEqual(result['results'][0]['ranking'][0], {'page_id': 'p', 'score': 0.3})
         self.assertIn('query', raw['results'][0])
+        self.assertEqual(public_result({'queries': ['private training text'], 'parameters_equal': 104}),
+                         {'queries': 1, 'parameters_equal': 104})
 
     def test_actual_config_verbatim_and_model_link_update_preserve_identity(self):
         with tempfile.TemporaryDirectory() as tmp:

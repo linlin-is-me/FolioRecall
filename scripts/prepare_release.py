@@ -23,7 +23,9 @@ VERIFICATIONS = ['installed-cpu-rc2-final', 'installed-cpu-post-review',
 def public_result(value):
     """Retain IDs, rankings, metrics and raw timings; do not redistribute task text."""
     if isinstance(value, dict):
-        return {key: public_result(item) for key, item in value.items()
+        return {key: (len(item) if key == 'queries' and isinstance(item, list)
+                      and all(isinstance(query, str) for query in item) else public_result(item))
+                for key, item in value.items()
                 if key not in {'query', 'text', 'markdown', 'preview'}}
     if isinstance(value, list):
         return [public_result(item) for item in value]
@@ -48,7 +50,7 @@ def record(source, destination, sources, *, verbatim=False):
         shutil.copyfile(source, destination)
     sources.append({'original': str(source), 'published': str(destination),
                     'transformation': 'verbatim' if verbatim or source.suffix != '.json'
-                    else 'omit query/text/markdown/preview fields; numbers and IDs unchanged'})
+                    else 'omit query/text/markdown/preview fields; query text lists become counts; other numbers and IDs unchanged'})
 
 
 def run_records(folder, destination, sources):
