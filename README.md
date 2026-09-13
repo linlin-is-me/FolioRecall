@@ -4,7 +4,7 @@ Efficient Visual Document Retrieval
 
 项目仓库：[linlin-is-me/FolioRecall](https://github.com/linlin-is-me/FolioRecall)。
 
-FolioRecall 面向英文视觉文档检索，支持 PDF／页面图像导入、页面编码和索引、LoRA 检索微调、查询蒸馏及独立查询学生。离线由多模态教师编码页面，在线使用教师或与其对齐的学生搜索页面。本地常驻演示正在第四阶段完成使用验证。
+FolioRecall 面向英文视觉文档检索，支持 PDF／页面图像导入、页面编码和索引、LoRA 检索微调、查询蒸馏及独立查询学生。离线由多模态教师编码页面，在线使用教师或与其对齐的学生搜索页面。本地常驻演示已在隔离 CPU 环境完成安装、检索、页面展示与下载验证。
 
 ## 当前状态
 
@@ -14,13 +14,43 @@ FolioRecall 面向英文视觉文档检索，支持 PDF／页面图像导入、�
 
 ## 第四阶段：首版交付进行中
 
-本轮仅执行非 GPU 工作。默认演示组合已确定为原始教师离线建库、公开 ML 学生 GPU BF16 查询，同时保留 CPU FP32 快速体验。wheel已在无教师缓存、无CUDA和训练组件的隔离CPU环境完成真实查询；安装态支持非Git目录，示例移到含空格路径后预览仍可访问。浏览器和正式CPU评测正在验证。GPU工作等待用户通知，代码和产物尚未发布。
+非 GPU 首轮已完成，第四阶段仍为部分完成。默认部署采用原始教师离线建库、公开 ML 学生 GPU BF16 查询，同时提供 CPU FP32 快速体验。`0.1.0rc1` wheel 已在 Python 3.10、Ubuntu／WSL 的独立 CPU 环境完成真实查询：无教师缓存、无 CUDA、torchvision 或训练组件，非 Git 目录与移动后的示例均可使用。GPU 正式评测、自有 PDF 安装态建库及 GPU 恢复验证等待用户通知和新预算；代码、模型与 Release 均未发布。
+
+![隔离 CPU 环境中的真实检索演示](doc/assets/stage4-cpu-demo.png)
+
+42 页示例中，人口预测问题命中物理第 10 页 Figure 3，浏览器下载结果与 CLI 一致。截图来自实际运行；报告素材属于 European Union，来源与许可见[使用说明](doc/首版使用与评测.md#安装与-cpu-快速体验)。范围外查询仍会返回页面，当前没有无答案检测或答案生成。
+
+完整 HR 任务为 1110 页、318 条英文查询，CPU FP32 结果如下。全部模型在独立进程内预热 5 次，固定顺序测 3 轮，线程 4/1、batch1。请求计时从输入文本到 Top-10 JSON 就绪，模型加载另计。
+
+| 查询方法 | nDCG@10 | Recall@5 / @10 | 请求 P50 / P95 | 峰值 RSS |
+|---|---:|---:|---:|---:|
+| 公开 EN | 0.547723 | 0.484318 / 0.604368 | 20.35 / 27.45 ms | 0.712 GB |
+| 公开 ML | 0.542341 | 0.476153 / 0.595031 | 20.36 / 27.53 ms | 0.709 GB |
+| 蒸馏第 94 步 | 0.453054 | 0.409267 / 0.518986 | 20.43 / 27.99 ms | 0.707 GB |
+| 页面 BM25 | 0.488475 | 0.415065 / 0.526089 | 3.44 / 5.97 ms | 0.159 GB |
+
+BM25 使用官方 markdown，上游 OCR 成本未知。五领域 12969 页、1489 条英文查询的 BM25 宏平均 nDCG@10 为 0.516565；其余四域学生等待页面索引。HR 上 EN 略高于 ML，继续蒸馏再次退化，保留已确认的默认 ML，不按单领域结果更换部署。完整分领域结果、建库与加载成本、错误案例见[首版使用与评测](doc/首版使用与评测.md#本轮实测结果)。
+
+从本地源码目录安装 CPU 体验环境，或先解压源码包：
+
+```bash
+python3.10 -m venv .venv
+source .venv/bin/activate
+python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+python -m pip install '.[demo]'
+python -c "from huggingface_hub import snapshot_download; snapshot_download('nanovdr/NanoVDR-Q-DistilBERT-Qwen3VL2B-2048-ML', revision='ab3f0fde9fcf407eaa756e1fc349ac09b7a716e7')"
+# 解压本地 demo-bundle.zip 后，在 demo-bundle 目录执行：
+CUDA_VISIBLE_DEVICES= HF_HUB_OFFLINE=1 foliorecall serve \
+  --index . --config configs/baseline.json --query-config configs/student-ml-cpu.json
+```
+
+访问 `http://127.0.0.1:7860`。首次加载学生实测约 44 秒，之后模型保持驻留。42 页演示的暖态页面显示准备 P50/P95 为 272/285 ms，Gradio 客户端响应为 1.038/1.069 秒；后者仍不含预览下载与浏览器渲染，不能用核心约 20 ms 代替界面延迟。CPU 学生权重约 274 MB，示例 ZIP 约 14.63 MB；本地安装产物位于 `outputs/stage4/packages/final`，示例为 `outputs/stage4/demo-bundle.zip`。尚无公开下载地址，素材在发布前仍需最终核对。
 
 安装、示例获取位置、CPU快速体验、GPU自有PDF入口及评测命令见[首版使用与评测](doc/首版使用与评测.md)。本地候选版本为 `0.1.0rc1`；不要将它表述为已发布的PyPI包或Release。自有代码采用[Apache-2.0](LICENSE)，上游代码与素材说明见[NOTICE](NOTICE)。
 
 ## 第三阶段：查询学生与蒸馏比较已完成
 
-2026-09-12：两款固定版本 NanoVDR 学生已完成CPU FP32与GPU BF16完整开发评测，原始教师完成同协议GPU测量。3000查询余弦蒸馏完成3个epoch，但最佳训练检查点低于公开ML初始化，按停止条件不扩到10000查询。保留公开学生与全部训练结果，默认部署组合由用户决定。独立 `--query-config` 复用匹配的原始教师页面索引；不传该参数仍使用教师查询。
+2026-09-12：两款固定版本 NanoVDR 学生已完成CPU FP32与GPU BF16完整开发评测，原始教师完成同协议GPU测量。3000查询余弦蒸馏完成3个epoch，但最佳训练检查点低于公开ML初始化，按停止条件不扩到10000查询。保留公开学生与全部训练结果；第四阶段用户已选公开ML GPU BF16作为默认查询部署。独立 `--query-config` 复用匹配的原始教师页面索引；不传该参数仍使用教师查询。
 
 | 查询候选 | nDCG@10 | Recall@5/10 | 编码 P50/P95 | 进程内完整请求 P50/P95 |
 |---|---:|---:|---:|---:|
@@ -238,7 +268,9 @@ HR 使用完整 1110 页候选库与种子 42 抽出的 20 条英文查询，保
 
 首版接入英文页面检索，中文、答案生成、重排序及候选方法按开发计划择需启用。公开学生与本项目继续蒸馏学生均完成CPU/GPU检索；中文学生、ONNX/int8和多深度学生尚未实现。界面仅面向本地单用户和一个常驻模型，不提供公网、多用户或在线建库管理。
 
-编码与训练接入 [Qwen3-VL-Embedding](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) 和 [Sentence Transformers](https://github.com/huggingface/sentence-transformers) 的现成接口，精确搜索使用 [FAISS](https://github.com/facebookresearch/faiss)。本项目实现导入元数据、命令行、数据筛选与划分、索引配置匹配、查询学生接入及评测。普通LoRA已有原标内部开发收益，稳定性与外部泛化尚未验证。NanoVDR采用其发布的2B教师配套学生与原结构，本地继续蒸馏复用STTrainer并接入逐查询余弦目标；本次3000查询试验未改善检索，保留公开学生。上游来源与兼容边界见第三阶段说明。
+编码与训练接入 [Qwen3-VL-Embedding](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) 和 [Sentence Transformers](https://github.com/huggingface/sentence-transformers) 的现成接口，精确搜索使用 [FAISS](https://github.com/facebookresearch/faiss)。本项目的开发工作包括可恢复文档导入、数据筛选与划分、教师身份校验、完整学生包接入、余弦蒸馏目标、分项计时、官方指标对照、CPU安装与常驻页面演示。模型骨干、训练器、FAISS、BM25和Gradio复用上游实现。普通LoRA已有原标内部开发收益，稳定性与外部泛化尚未验证；本地3000查询蒸馏在内部开发和完整HR任务均未改善检索。上游来源与兼容边界见第三阶段说明。
+
+自有代码采用 [Apache-2.0](LICENSE)，上游说明见 [NOTICE](NOTICE)。模型、数据和示例素材分别遵守上游许可，不因代码许可而变更。
 
 ## 开发文档
 
