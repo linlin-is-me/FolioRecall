@@ -11,13 +11,15 @@ from gradio_client import Client
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', required=True)
 parser.add_argument('--server-output', required=True)
+parser.add_argument('--reference', default='outputs/stage4/installed-cpu/cli-result.json')
+parser.add_argument('--url', default='http://127.0.0.1:7864')
 args = parser.parse_args()
 output = Path(args.output)
 if output.exists():
     raise SystemExit('Use a new API measurement output')
 output.mkdir(parents=True)
 queries = json.loads(Path('outputs/stage4/demo-bundle/queries.json').read_text())
-client = Client('http://127.0.0.1:7864', verbose=False, download_files=False)
+client = Client(args.url, verbose=False, download_files=False)
 for i in range(5):
     client.predict(queries[i % len(queries)]['query'], 5, api_name='/search')
 rows = []
@@ -36,11 +38,11 @@ if isinstance(download, dict):
 else:
     url = download
 if not url.startswith('http'):
-    url = 'http://127.0.0.1:7864/gradio_api/file=' + url
+    url = args.url.rstrip('/') + '/gradio_api/file=' + url
 with urllib.request.urlopen(url) as response:
     ranked = json.load(response)
 assert ranked[0]['page_number'] == 10
-reference = json.loads(Path('outputs/stage4/installed-cpu/cli-result.json').read_text())
+reference = json.loads(Path(args.reference).read_text())
 assert ranked == reference
 (output / 'downloaded-results.json').write_text(json.dumps(ranked, indent=2))
 try:

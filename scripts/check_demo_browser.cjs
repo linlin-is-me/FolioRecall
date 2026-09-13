@@ -1,4 +1,4 @@
-// Real browser QA for the running installed CPU demo; no synthetic UI rendering.
+// Real browser QA for the running installed demo; browser rendering uses CPU.
 const {chromium} = require('playwright');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -6,6 +6,8 @@ const path = require('node:path');
 (async () => {
   const root = process.cwd();
   const output = path.resolve(process.argv[2] || 'outputs/stage4/browser');
+  const referencePath = path.resolve(process.argv[3] || 'outputs/stage4/installed-cpu/cli-result.json');
+  const indexLabel = process.argv[4] || 'moved example';
   if (fs.existsSync(output)) throw new Error('Use a new browser verification directory');
   fs.mkdirSync(output, {recursive: true});
   const browser = await chromium.launch({headless: true,
@@ -25,7 +27,7 @@ const path = require('node:path');
     await page.locator('img[src*="file="]').first().waitFor({timeout: 30000});
     await page.waitForFunction(() => [...document.querySelectorAll('img[src*="file="]')].every(image => image.complete && image.naturalWidth > 0));
     const readyMs = performance.now() - started;
-    if (!(await page.locator('body').innerText()).includes('moved example')) throw new Error('Missing index name');
+    if (!(await page.locator('body').innerText()).includes(indexLabel)) throw new Error('Missing index name');
     const link = page.locator('a[href*="results-"]').first();
     const downloadPromise = page.waitForEvent('download');
     await link.click();
@@ -33,7 +35,7 @@ const path = require('node:path');
     const downloadedPath = path.join(output, 'downloaded-results.json');
     await download.saveAs(downloadedPath);
     const downloaded = JSON.parse(fs.readFileSync(downloadedPath, 'utf8'));
-    const reference = JSON.parse(fs.readFileSync(path.join(root, 'outputs/stage4/installed-cpu/cli-result.json'), 'utf8'));
+    const reference = JSON.parse(fs.readFileSync(referencePath, 'utf8'));
     if (JSON.stringify(downloaded) !== JSON.stringify(reference)) throw new Error('Browser download differs from CLI');
     await page.screenshot({path: path.join(output, 'retrieval.png'), fullPage: true});
     const body = await page.locator('body').innerText();
