@@ -9,6 +9,34 @@ METRICS = ('nDCG@10', 'Recall@5', 'Recall@10')
 COMPARISONS = [('lora750', 'original'), ('ml', 'original'), ('distilled94', 'ml')]
 
 
+def index_costs(matrix, budget_root=Path('outputs/stage4/gpu-budget')):
+    """Keep legacy timing boundaries and missing fields, and include all new segments."""
+    costs, seen = [], set()
+    processes = [(p, read_json(p)) for p in Path(budget_root).glob('runs/*/process.json')]
+    for cell in matrix:
+        if not cell.get('index'):
+            continue
+        key = (cell['task'], cell.get('teacher', 'original'), cell['index'])
+        if key in seen:
+            continue
+        seen.add(key)
+        folder = Path(cell['index'])
+        item = dict(task=key[0], teacher=key[1], index=str(folder), complete=(folder / 'index.faiss').is_file())
+        if item['complete']:
+            from .indexing import index_sizes
+            item.update(index_sizes(folder))
+            item['build'] = read_json(folder / 'build.json') if (folder / 'build.json').is_file() else None
+        matched = []
+        for path, process in processes:
+            command = process.get('command', [])
+            if '--output' in command and Path(command[command.index('--output')+1]).resolve() == folder.resolve():
+                matched.append(dict(record=str(path), **process))
+        item['gpu_process_segments'] = matched
+        item['gpu_process_seconds'] = sum(p['seconds'] for p in matched) if matched else None
+        costs.append(item)
+    return costs
+
+
 def paired_interval(differences, seed=42, repeats=10000):
     rng = np.random.default_rng(seed)
     samples = np.zeros(repeats)
@@ -102,11 +130,60 @@ def summarize_matrix(manifest, output):
               'comparisons': comparisons, 'latency_review': unstable,
               'default': 'original page teacher + public ML GPU BF16; unchanged',
               'limits': 'Original labels retained. HR20 previously used for flow checks. Upstream/document overlap not fully verified. Bootstrap describes fixed-task query variation only.'}
+    result['indexes'] = index_costs(manifest['matrix'])
+    bm25 = {}
+    for task in tasks:
+        file = Path('outputs/stage4/bm25') / task / 'result.json'
+        if file.is_file():
+            record = read_json(file)
+            if record['queries'] != tasks[task]['english_queries'] or record['candidates'] != tasks[task]['pages']:
+                raise ValueError(f'BM25任务范围不符: {file}')
+            bm25[task] = {k: record.get(k) for k in ('metrics', 'request_seconds', 'build_seconds', 'index_bytes',
+                'text_coverage', 'warm_memory', 'final_memory')}
+    result['bm25'] = bm25
+    result['bm25_macro'] = {m: float(np.mean([r['metrics'][m] for r in bm25.values()])) for m in METRICS} if len(bm25) == len(tasks) else None
+    result['gpu_encoding_speedups'] = []
+    for task in tasks:
+        teacher = loaded.get((task, 'gpu', 'original'))
+        if not teacher or not teacher.get('gpu'):
+            continue
+        for candidate in ('en', 'ml', 'distilled94'):
+            student = loaded.get((task, 'gpu', candidate))
+            if student and student.get('gpu') == teacher['gpu']:
+                result['gpu_encoding_speedups'].append({'task': task, 'candidate': candidate,
+                    'gpu': teacher['gpu'], 'bf16_encode_p50_speedup': teacher['encode_seconds']['p50']/student['encode_seconds']['p50']})
     write_json(output / 'result.json', result)
     lines = ['# 第四阶段正式矩阵', '', f'已完成 {len(cells)}/40 项；缺失 {len(pending)} 项。缺项不计作零分，不生成不完整候选宏平均。', '',
         '| 领域 | 设备 | 候选 | nDCG@10 | Recall@5/10 | 请求P50/P95 ms |', '|---|---|---|---:|---:|---:|']
     for c in cells:
         r = c['summary']; m = r['metrics']; t = r['request_seconds']
         lines.append(f"| {c['task']} | {c['device']} | {c['candidate']} | {m['nDCG@10']:.6f} | {m['Recall@5']:.6f}/{m['Recall@10']:.6f} | {t['p50']*1000:.2f}/{t['p95']*1000:.2f} |")
+    def number(value, scale=1, digits=2):
+        return '未记录' if value is None else f'{value/scale:.{digits}f}'
+    lines += ['', '## 分项成本', '', 'GB采用十进制；显存为PyTorch统计，不含全部CUDA上下文。CPU部署单列，缺失历史字段不补造。', '',
+        '| 领域/设备/候选 | 编码 P50/P95 ms | 编码加搜索 P50/P95 ms | 加载 s | 暖态RSS/进程峰值 GB | 加载预热/暖请求 CUDA峰值 GB |',
+        '|---|---:|---:|---:|---:|---:|']
+    for c in cells:
+        r = c['summary']
+        pair = lambda key: '/'.join(number(r.get(key, {}).get(p), .001) for p in ('p50', 'p95'))
+        warm = r.get('warm_memory', {}).get('rss_bytes')
+        peak = r.get('final_memory', {}).get('peak_rss_bytes')
+        loading_peak = (r.get('loading_warmup_cuda_peak') or {}).get('allocated_bytes')
+        lines.append(f"| {c['task']}/{c['device']}/{c['candidate']} | {pair('encode_seconds')} | {pair('query_seconds')} | {number(r.get('model_loading_seconds'))} | {number(warm, 1e9)}/{number(peak, 1e9)} | {number(loading_peak, 1e9)}/{number(r.get('peak_cuda_bytes'), 1e9)} |")
+    lines += ['', '| 领域/设备/候选 | 基座/适配器/总权重 MB | 完整加载包 MB | 加载预热/暖请求 CUDA保留峰值 GB |', '|---|---:|---:|---:|']
+    for c in cells:
+        r = c['summary']
+        weights = '/'.join(number(r.get(k), 1e6) for k in ('base_weight_bytes', 'adapter_weight_bytes', 'weight_file_bytes'))
+        reserved = (r.get('loading_warmup_cuda_peak') or {}).get('reserved_bytes')
+        lines.append(f"| {c['task']}/{c['device']}/{c['candidate']} | {weights} | {number(r.get('model_package_bytes'), 1e6)} | {number(reserved, 1e9)}/{number(r.get('peak_cuda_reserved_bytes'), 1e9)} |")
+    lines += ['', '## 页面建库', '', '| 领域/教师 | 部署索引 MB | 记录内建库 s | GPU完整进程累计 s | 测量边界 |', '|---|---:|---:|---:|---|']
+    for item in result['indexes']:
+        build = item.get('build') or {}
+        lines.append(f"| {item['task']}/{item['teacher']} | {number(item.get('deployment_index_bytes'), 1e6)} | {number(build.get('seconds'))} | {number(item['gpu_process_seconds'])} | {build.get('timing_scope', '待建库或历史未记录')} |")
+    lines += ['', '## 页面文本 BM25', '', '直接复用固定官方markdown结果；上游OCR成本未知。', '',
+        '| 领域 | nDCG@10 | Recall@5/10 | 请求 P50/P95 ms |', '|---|---:|---:|---:|']
+    for task, r in bm25.items():
+        m, t = r['metrics'], r['request_seconds']
+        lines.append(f"| {task} | {m['nDCG@10']:.6f} | {m['Recall@5']:.6f}/{m['Recall@10']:.6f} | {t['p50']*1000:.2f}/{t['p95']*1000:.2f} |")
     (output / 'results.md').write_text('\n'.join(lines)+'\n', encoding='utf-8')
     return result

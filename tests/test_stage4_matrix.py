@@ -3,10 +3,29 @@ import tempfile
 import unittest
 
 from foliorecall.io import read_json, write_json
-from foliorecall.stage4_results import paired_interval, summarize_matrix
+from foliorecall.stage4_results import index_costs, paired_interval, summarize_matrix
 
 
 class MatrixTests(unittest.TestCase):
+    def test_index_cost_retains_old_scope_and_adds_failed_segments(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            index = root / 'index'
+            index.mkdir()
+            (index / 'index.faiss').write_bytes(b'index')
+            (index / 'pages.jsonl').write_bytes(b'pages')
+            (index / 'config.json').write_bytes(b'config')
+            write_json(index / 'build.json', {'seconds': 8, 'timing_scope': 'excludes loading'})
+            cells = [{'task': 'a', 'teacher': 'original', 'index': str(index)}]*2
+            budget = root / 'budget'
+            for name, seconds, code in [('failed', 3, 1), ('resumed', 8, 0)]:
+                write_json(budget / 'runs' / name / 'process.json', {'command': ['index', '--output', str(index)], 'seconds': seconds, 'returncode': code})
+            result = index_costs(cells, budget)
+            self.assertEqual(len(result), 1)
+            self.assertEqual(result[0]['gpu_process_seconds'], 11)
+            self.assertEqual(result[0]['build']['timing_scope'], 'excludes loading')
+            self.assertNotIn('model_loading_seconds', result[0]['build'])
+
     def test_missing_domains_do_not_produce_macro_and_query_ids_are_task_scoped(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
