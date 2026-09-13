@@ -69,6 +69,12 @@ def load_retriever(folder, teacher_config, query_config=None, candidate_pages=No
     if candidate_pages is not None:
         from .evaluation import validate_candidate_corpus
         validate_candidate_corpus(pages, candidate_pages)
+    if query_config is not None:
+        import torch
+        import faiss
+        torch.set_num_threads(4)
+        torch.set_num_interop_threads(1)
+        faiss.omp_set_num_threads(1)
     model = load_query_encoder(query_config or teacher_config)
     return model, index, pages
 

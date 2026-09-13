@@ -8,8 +8,19 @@ from .io import read_json, read_rows, write_json, provenance
 
 
 def main():
+    command_started = time.perf_counter()
     parser = argparse.ArgumentParser(description="FolioRecall visual document retrieval")
     sub = parser.add_subparsers(dest="command", required=True)
+    text_eval = sub.add_parser("evaluate-text", help="上游页面文本的固定 BM25 对照")
+    text_eval.add_argument("--config", required=True)
+    text_eval.add_argument("--data", required=True)
+    text_eval.add_argument("--output", required=True)
+    serve = sub.add_parser("serve", help="启动单模型常驻的本地页面检索演示")
+    serve.add_argument("--index", required=True)
+    serve.add_argument("--config", required=True)
+    serve.add_argument("--query-config", required=True)
+    serve.add_argument("--port", type=int, default=7860)
+    serve.add_argument("--output", help="可选的应用验证记录目录，不记录到已有实验中")
     imp = sub.add_parser("import")
     imp.add_argument("inputs", nargs="*")
     imp.add_argument("--image-manifest")
@@ -62,6 +73,15 @@ def main():
                 command.add_argument("--max-seconds", type=float, default=3600)
                 command.add_argument("--checkpoint-only", action="store_true", help="Save checkpoints without development evaluation or final encoding probes")
     args = parser.parse_args()
+    if args.command == "evaluate-text":
+        from .text_baseline import evaluate_text
+        result = evaluate_text(read_json(args.config), args.data, args.output)
+        print(json.dumps(result['metrics'], indent=2))
+        return 0
+    if args.command == "serve":
+        from .demo import serve_demo
+        serve_demo(args.index, read_json(args.config), read_json(args.query_config), args.port, args.output)
+        return 0
     if args.command == "cache-teacher":
         from .targets import cache_teacher
         print(json.dumps(cache_teacher(args.teacher, args.data, args.output, args.count, args.stop_after, args.max_seconds), indent=2))
@@ -79,6 +99,18 @@ def main():
         return 0 if result["pages"] else 1
     config = read_json(args.config)
     query_config = read_json(args.query_config) if getattr(args, "query_config", None) else config
+    if args.command == "query":
+        from .query import load_retriever, retrieve
+        model, index, pages = load_retriever(args.index, config,
+            query_config if args.query_config else None)
+        result, payload, _ = retrieve(model, query_config, index, pages, args.text, args.top_k)
+        if args.json:
+            print(payload)
+        else:
+            for rank, row in enumerate(result, 1):
+                print(f"{rank}. {row.get('document_name', row['doc_id'])} | page {row['page_number']} | {row['score']:.6f}")
+                print(f"   source: {row['source']}\n   preview: {row['preview']}")
+        return 0
     if args.command == "train":
         from .trainer import train
         if args.gradient_checkpointing:
@@ -144,6 +176,9 @@ def main():
         import torch
         from PIL import Image
         from .encoding import processing
+        from .query import process_memory
+        memory_after_loading = process_memory()
+        probe_started = time.perf_counter()
         with Image.open(pages[0]["preview"]) as image:
             features = model.preprocess([image.convert("RGB")], prompt=config["prompt"],
                                         processing_kwargs=processing(config))
@@ -152,24 +187,30 @@ def main():
                  "image_grid_thw": features["image_grid_thw"].tolist()}
         write_json(Path(args.output) / "encoding-probe.json", probe)
         del features
+        if config["device"] == "cuda":
+            torch.cuda.synchronize()
+        probe_seconds = time.perf_counter() - probe_started
         start = time.perf_counter()
         vectors = encode_pages(model, pages, config)
+        if config["device"] == "cuda":
+            torch.cuda.synchronize()
+        encoding_seconds = time.perf_counter() - start
+        save_started = time.perf_counter()
         save_index(vectors, pages, config, args.output)
         result = {"pages": len(pages), "seconds": time.perf_counter() - start,
+                  "model_loading_seconds": loading_seconds, "probe_seconds": probe_seconds,
+                  "encoding_seconds": encoding_seconds, "index_save_seconds": time.perf_counter() - save_started,
+                  "pages_per_second": len(pages) / encoding_seconds,
+                  "command_seconds": time.perf_counter() - command_started,
+                  "command_timing_scope": "main entry through index save; interpreter startup and final result printing excluded",
+                  "memory_after_loading": memory_after_loading, "final_memory": process_memory(),
+                  "index_bytes": sum(p.stat().st_size for p in Path(args.output).iterdir() if p.is_file()),
+                  "peak_cuda_reserved_bytes": torch.cuda.max_memory_reserved() if config["device"] == "cuda" else None,
                   "timing_scope": "image reads, encoding and index save; excludes model loading and preprocessing probe",
                   "gpu": torch.cuda.get_device_name() if config["device"] == "cuda" else None,
                   "peak_cuda_bytes": torch.cuda.max_memory_allocated() if config["device"] == "cuda" else None}
         write_json(Path(args.output) / "build.json", result)
         print(json.dumps(result, indent=2))
-    elif args.command == "query":
-        from .query import retrieve
-        result, payload, _ = retrieve(model, query_config, index, pages, args.text, args.top_k)
-        if args.json:
-            print(payload)
-        else:
-            for rank, row in enumerate(result, 1):
-                print(f"{rank}. {row.get('document_name', row['doc_id'])} | page {row['page_number']} | {row['score']:.6f}")
-                print(f"   source: {row['source']}\n   preview: {row['preview']}")
     else:
         from .evaluation import evaluate
         data = Path(args.data)
