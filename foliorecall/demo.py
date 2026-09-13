@@ -15,13 +15,13 @@ def display_request(model, config, index, pages, text, top_k, downloads, log=Non
     gallery, table, warnings = [], [], []
     for rank, row in enumerate(ranked, 1):
         name = row.get('document_name', row['doc_id'])
-        table.append([rank, name, row['page_number'], row['score'], row['source']])
+        table.append([rank, name, row['page_number'], round(row['score'], 6), row['source']])
         try:
             with Image.open(row['preview']) as image:
                 # Return a bounded copy, not arbitrary filesystem URLs.
                 preview = image.convert('RGB')
                 preview.thumbnail((1000, 1400))
-                gallery.append((preview, f"{rank}. {name} · page {row['page_number']} · {row['score']:.4f}"))
+                gallery.append((preview, f"{rank}. 第 {row['page_number']} 页 · {row['score']:.4f} · {name}"))
         except (OSError, ValueError) as exc:
             warnings.append(f"第 {rank} 项预览不可读：{exc}")
     target = Path(downloads) / f'results-{time.time_ns()}.json'
@@ -66,14 +66,15 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None):
     temporary = tempfile.TemporaryDirectory(prefix='foliorecall-demo-')
     with gr.Blocks(title='FolioRecall · 页寻', analytics_enabled=False) as app:
         gr.Markdown('# FolioRecall · 页寻\n英文文档页面检索。分数表示相关性，不表示答案正确概率。')
-        gr.Markdown(f"当前模型：`{query_config['model_id']}` · `{query_config['device']}` / `{query_config['dtype']}`\n\n页面库：`{Path(folder).name}` · {len(pages)} 页")
+        gr.Markdown(f"当前模型：`{query_config['model_id']}` · `{query_config['device']}` / `{query_config['dtype']}`\n\n页面库：`{Path(folder).resolve().name}` · {len(pages)} 页")
         text = gr.Textbox(label='英文问题', placeholder='Enter a question about these documents')
         top_k = gr.Slider(1, min(10, len(pages)), value=min(5, len(pages)), step=1, label='Top-k')
         button = gr.Button('检索', variant='primary')
         if examples:
             gr.Examples(examples=examples, inputs=text)
         status = gr.Markdown()
-        table = gr.Dataframe(headers=['排名', '文档', '物理页码', '相关性', '来源'], interactive=False)
+        table = gr.Dataframe(headers=['排名', '文档', '物理页码', '相关性', '来源'], interactive=False,
+                             column_widths=['60px', '450px', '100px', '110px', '360px'], wrap=True)
         gallery = gr.Gallery(label='相关页面', columns=2, object_fit='contain', height=650)
         download = gr.File(label='下载结果 JSON', interactive=False)
         def submit(query, k):
