@@ -2,7 +2,6 @@ from pathlib import Path
 import uuid
 
 from PIL import Image
-import pypdfium2 as pdfium
 
 from .io import read_json, read_rows, write_json, write_rows
 
@@ -23,10 +22,27 @@ def validate_pages(rows):
 
 
 def import_documents(inputs, output, dpi=150, image_manifest=None):
+    try:
+        import pypdfium2 as pdfium
+    except ImportError as exc:
+        raise ValueError("文档导入需要安装 foliorecall[image]") from exc
     if dpi <= 0:
         raise ValueError("DPI 必须为正")
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
+    # Reject changes before writing any previews or replacing the old manifest.
+    for item in inputs:
+        source = Path(item).absolute()
+        doc_id = uuid.uuid5(uuid.NAMESPACE_URL, source.as_uri()).hex
+        saved = output / doc_id / "import.json"
+        if saved.exists():
+            try:
+                stat = source.stat()
+            except OSError as exc:
+                raise ValueError(f"已导入的源文件无法读取: {source}；请使用新输出目录") from exc
+            signature = {"path": str(source), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns, "dpi": dpi}
+            if read_json(saved)["input"] != signature:
+                raise ValueError(f"输入或 DPI 已变化: {source}；请使用新输出目录，避免改写旧索引预览")
     rows, errors = [], []
     if image_manifest:
         base = Path(image_manifest).resolve().parent

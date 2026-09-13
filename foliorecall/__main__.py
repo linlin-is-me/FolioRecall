@@ -126,7 +126,6 @@ def main():
         if args.command == "evaluate" and (Path(args.output) / "result.json").exists():
             raise ValueError("评测结果已存在，请使用新输出目录")
         provenance(args.output, {"page_config": config, "query_config": query_config} if getattr(args, "query_config", None) else config)
-    from .encoding import load_encoder, encode_pages, encode_queries
     loading_started = time.perf_counter()
     if args.command in ("query", "evaluate"):
         from .query import load_query_encoder
@@ -138,6 +137,7 @@ def main():
             faiss.omp_set_num_threads(1)
         model = load_query_encoder(query_config)
     else:
+        from .encoding import load_encoder, encode_pages
         model = load_encoder(config)
     loading_seconds = time.perf_counter() - loading_started
     if args.command == "index":
@@ -189,9 +189,13 @@ def main():
     return 0
 
 
-if __name__ == "__main__":
+def entrypoint():
     try:
         sys.exit(main())
-    except (ValueError, OSError, RuntimeError, KeyError) as exc:
+    except (ValueError, OSError, RuntimeError, KeyError, ImportError) as exc:
         print(f"FolioRecall: {type(exc).__name__}: {exc}", file=sys.stderr)
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    entrypoint()

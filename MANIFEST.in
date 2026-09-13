@@ -1,0 +1,6 @@
+include AGENTS.md requirements.txt
+recursive-include configs *.json
+recursive-include examples *.json
+recursive-include scripts *.py *.sh
+recursive-include doc *.md *.csv
+recursive-include tests *.py

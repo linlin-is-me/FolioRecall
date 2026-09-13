@@ -22,3 +22,6 @@ indexes/
 *.pth
 *.ckpt
 *.log
+build/
+dist/
+*.egg-info/

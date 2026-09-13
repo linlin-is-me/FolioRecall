@@ -25,10 +25,12 @@ def validate_query_config(config, teacher_config):
 
 
 def load_query_encoder(config):
-    from .encoding import load_encoder
     if config.get("kind") != "nanovdr":
+        from .encoding import load_encoder
         return load_encoder(config)
     import torch
+    if config["device"] == "cuda" and not torch.cuda.is_available():
+        raise ValueError("CUDA 不可用；CPU 示例请显式使用 student-ml-cpu.json")
     from sentence_transformers import SentenceTransformer
     if config.get("model_path"):
         saved = json.loads((Path(config["model_path"]) / "query-config.json").read_text())
@@ -56,6 +58,19 @@ def load_query_encoder(config):
         raise ValueError("学生骨干与发布配置不匹配")
     model.eval()
     return model
+
+
+def load_retriever(folder, teacher_config, query_config=None, candidate_pages=None):
+    """Validate identities and the full corpus before loading query weights."""
+    from .search import load_index
+    if query_config is not None:
+        validate_query_config(query_config, teacher_config)
+    index, pages = load_index(folder, teacher_config)
+    if candidate_pages is not None:
+        from .evaluation import validate_candidate_corpus
+        validate_candidate_corpus(pages, candidate_pages)
+    model = load_query_encoder(query_config or teacher_config)
+    return model, index, pages
 
 
 def encode_query_texts(model, texts, config):

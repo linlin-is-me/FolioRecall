@@ -1,0 +1,11 @@
+FolioRecall
+Copyright 2026 FolioRecall contributors
+
+Project code is licensed under the Apache License, Version 2.0.
+Model weights, datasets, document images and upstream code retain their own licenses.
+
+This project uses Sentence Transformers (UKPLab), Transformers and Hugging Face Hub
+(Hugging Face), Qwen3-VL-Embedding (Qwen), NanoVDR (Zhuchenyang Liu, Yao Zhang,
+Yu Xiao), FAISS (Meta), PyTorch, Gradio, pypdfium2, rank-bm25 and pytrec_eval.
+Their implementations and pretrained models are not original FolioRecall work.
+See README and the example bundle's SOURCES.md for sources and material licenses.

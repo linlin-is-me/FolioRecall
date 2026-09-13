@@ -34,6 +34,12 @@ def load_index(folder, config):
     if encoding_identity(read_json(folder / "config.json")) != encoding_identity(config):
         raise ValueError("查询编码配置与索引不匹配，请使用同一模型、适配器与预处理配置")
     rows = read_rows(folder / "pages.jsonl")
+    if len({row["page_id"] for row in rows}) != len(rows):
+        raise ValueError("索引包含重复 page_id")
+    for row in rows:
+        preview = Path(row["preview"])
+        if not preview.is_absolute():
+            row["preview"] = str((folder / preview).resolve())
     index = faiss.read_index(str(folder / "index.faiss"))
     if not rows or index.ntotal != len(rows) or index.d != config["dimension"]:
         raise ValueError("空索引或索引元数据不匹配")
@@ -43,6 +49,18 @@ def load_index(folder, config):
 def search(index, rows, query_vectors, top_k=5):
     if top_k < 1 or index.ntotal == 0:
         raise ValueError("top_k 必须为正，索引不能为空")
-    scores, positions = index.search(np.ascontiguousarray(query_vectors, dtype=np.float32), min(top_k, len(rows)))
-    return [[dict(rows[int(pos)], score=float(score)) for score, pos in zip(qscores, qpositions)]
-            for qscores, qpositions in zip(scores, positions)]
+    vectors = np.ascontiguousarray(query_vectors, dtype=np.float32)
+    k = min(top_k, len(rows))
+    rankings = []
+    for vector in vectors:
+        window = min(k + 1, len(rows))
+        while True:
+            scores, positions = index.search(vector[None, :], window)
+            if window == len(rows) or scores[0, k - 1] != scores[0, -1]:
+                break
+            window = min(len(rows), window * 2)
+        ranked = [dict(rows[int(pos)], score=float(score)) for score, pos in zip(scores[0], positions[0])]
+        # trec_eval uses descending document ID strings to break exact ties.
+        ranked.sort(key=lambda row: (row["score"], str(row["page_id"])), reverse=True)
+        rankings.append(ranked[:k])
+    return rankings
