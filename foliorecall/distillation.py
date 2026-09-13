@@ -47,13 +47,36 @@ def projection_parameter_names(model):
     return names
 
 
+def validate_resume(output, resume, settings, rows, stop_after=None):
+    output, resume = Path(output), Path(resume).resolve()
+    if resume.parent != output.resolve() or read_json(output / 'settings.json') != settings:
+        raise ValueError('恢复必须使用所属输出目录、相同配置和目标')
+    if read_rows(output / 'training-queries.jsonl') != rows:
+        raise ValueError('恢复查询 ID、文本或顺序变化')
+    if (output / 'final').exists() or ((output / 'result.json').exists() and read_json(output / 'result.json').get('complete')):
+        raise ValueError('训练已完成或已有最终模型，不能覆盖；请使用新输出目录')
+    state = read_json(resume / 'trainer_state.json')
+    step = state['global_step']
+    checkpoints = [p for p in output.glob('checkpoint-*') if p.is_dir() and p.name.split('-')[-1].isdigit()]
+    if not checkpoints or resume != max(checkpoints, key=lambda p: int(p.name.split('-')[-1])).resolve():
+        raise ValueError('只能恢复最新检查点；拒绝回退并覆盖后续产物')
+    if step >= state['max_steps'] or (stop_after is not None and stop_after <= step):
+        raise ValueError('恢复检查点已达到目标步骤')
+    for name in ('optimizer.pt', 'scheduler.pt', 'rng_state.pth'):
+        if not (resume / name).is_file():
+            raise ValueError(f'恢复检查点缺少 {name}')
+    return step
+
+
 def distill(query_config, targets, output, index, data, limit=None, max_steps=None,
-            micro_batch=32, max_seconds=3600, resume=None, evaluate_checkpoints=True):
+            micro_batch=32, max_seconds=3600, resume=None, evaluate_checkpoints=True, stop_after=None):
     from datasets import Dataset
     from sentence_transformers import SentenceTransformerTrainer, SentenceTransformerTrainingArguments
     from transformers import TrainerCallback, enable_full_determinism
 
     started = time.monotonic()
+    if stop_after is not None and stop_after < 1:
+        raise ValueError('stop-after 必须为正')
     if micro_batch not in (8, 16, 32):
         raise ValueError("微批应为8、16或32；有效batch保持32")
     if query_config["device"] != "cuda":
@@ -74,10 +97,7 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
         "index": str(Path(index).resolve()), "evaluate_checkpoints": evaluate_checkpoints}
     if resume:
         resume = Path(resume).resolve()
-        if resume.parent != output or read_json(output / "settings.json") != settings:
-            raise ValueError("恢复必须使用所属输出目录、相同配置和目标")
-        if read_rows(output / "training-queries.jsonl") != rows:
-            raise ValueError("恢复查询 ID、文本或顺序变化")
+        validate_resume(output, resume, settings, rows, stop_after)
     else:
         if output.exists() and any(output.iterdir()):
             raise ValueError("训练输出目录非空；恢复请指定 --resume")
@@ -85,7 +105,7 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
         write_rows(output / "training-queries.jsonl", rows)
         write_json(output / "teacher-config.json", teacher_config)
     run = output / "runs" / str(time.time_ns())
-    provenance(run, dict(settings, resume=str(resume) if resume else None, max_seconds=max_seconds))
+    provenance(run, dict(settings, resume=str(resume) if resume else None, max_seconds=max_seconds, stop_after=stop_after))
     enable_full_determinism(42)
     torch.set_num_threads(4)
     # Train FP32 master weights with BF16 autocast; exports retain FP32 weights.
@@ -120,7 +140,7 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
                 gradient_checks.append({"finite_gradients": len(gradients), "nonzero_gradients": len(nonzero)})
 
         def on_step_end(self, args, state, control, **kwargs):
-            if time.monotonic()-started >= effective_limit:
+            if time.monotonic()-started >= effective_limit or (stop_after is not None and state.global_step >= stop_after):
                 control.should_training_stop = True
                 control.should_save = True
             if state.global_step % 10 == 0:
@@ -159,7 +179,10 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
         loss=QueryAlignmentLoss(model), callbacks=[Checks()])
     try:
         trainer.train(resume_from_checkpoint=str(resume) if resume else None)
-        final = output / "final"
+        complete = trainer.state.global_step >= trainer.state.max_steps
+        final = output / "final" if complete else run / "partial-export"
+        if final.exists():
+            raise ValueError('模型导出目录已存在，拒绝覆盖')
         trainer.save_model(str(final))
         export_config = dict(query_config, model_path=str(final), dtype="float32", device="cpu", batch_size=1)
         write_json(final / "query-config.json", export_config)
@@ -176,7 +199,7 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
         delta = float(np.max(np.abs(expected-actual)))
         if delta > 1e-6:
             raise ValueError(f"学生保存重载不一致: {delta}")
-        result = {"complete": trainer.state.global_step >= trainer.state.max_steps,
+        result = {"complete": complete,
             "completed_steps": trainer.state.global_step, "target_steps": trainer.state.max_steps,
             "seconds": time.monotonic()-started, "loading_seconds": loading_seconds,
             "peak_cuda_bytes": torch.cuda.max_memory_allocated(),
@@ -185,7 +208,7 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
             "gradient_checks": gradient_checks, "checked_updated_tensors": updated,
             "reload_max_abs_diff": delta, "evaluations": evaluations, "log_history": trainer.state.log_history,
             "training_dtype": "FP32 master weights, BF16 autocast", "final": str(final),
-            "selection": "public initialization remains a candidate; deploy choice pending user review"}
+            "selection": "diagnostic only; confirmed public ML deployment is unchanged"}
         write_json(output / "result.json", result)
         write_json(run / "result.json", result)
         return result

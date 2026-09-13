@@ -44,6 +44,7 @@ def main():
     student_train.add_argument("--micro-batch", type=int, default=32)
     student_train.add_argument("--max-seconds", type=float, default=3600)
     student_train.add_argument("--resume")
+    student_train.add_argument("--stop-after", type=int, help="Pause at this global step without changing the training schedule")
     student_train.add_argument("--skip-evaluation", action="store_true", help="Only for the initial four-step integration probe")
     for name in ("index", "query", "evaluate", "train-smoke", "train"):
         command = sub.add_parser(name)
@@ -51,6 +52,9 @@ def main():
         if name == "index":
             command.add_argument("--pages", required=True)
             command.add_argument("--output", required=True)
+            command.add_argument("--resume", action="store_true")
+            command.add_argument("--chunk-size", type=int, default=64)
+            command.add_argument("--max-seconds", type=float)
         elif name in ("query", "evaluate"):
             command.add_argument("--index", required=True)
             command.add_argument("--query-config")
@@ -89,7 +93,7 @@ def main():
     if args.command == "distill":
         from .distillation import distill
         result = distill(read_json(args.query_config), args.targets, args.output, args.index, args.data,
-            args.limit, args.max_steps, args.micro_batch, args.max_seconds, args.resume, not args.skip_evaluation)
+            args.limit, args.max_steps, args.micro_batch, args.max_seconds, args.resume, not args.skip_evaluation, args.stop_after)
         print(json.dumps({k: v for k, v in result.items() if k != "log_history"}, indent=2))
         return 0
     if args.command == "import":
@@ -99,6 +103,11 @@ def main():
         return 0 if result["pages"] else 1
     config = read_json(args.config)
     query_config = read_json(args.query_config) if getattr(args, "query_config", None) else config
+    if args.command == "index":
+        from .indexing import build_index
+        result = build_index(config, args.pages, args.output, args.resume, args.chunk_size, args.max_seconds)
+        print(json.dumps(result, indent=2))
+        return 0 if result['complete'] else 75
     if args.command == "query":
         from .query import load_retriever, retrieve
         model, index, pages = load_retriever(args.index, config,
@@ -138,95 +147,42 @@ def main():
                        "gradient_checkpointing": args.gradient_checkpointing})
             raise
         return 0
-    from .search import load_index, save_index, search
-    if args.command in ("query", "evaluate"):
-        if getattr(args, "query_config", None):
-            from .query import validate_query_config
-            validate_query_config(query_config, config)
-        index, pages = load_index(args.index, config)
-        if args.command == "evaluate":
-            from .evaluation import validate_candidate_corpus
-            validate_candidate_corpus(pages, read_rows(Path(args.data) / "pages.jsonl"))
-    else:
-        from .documents import validate_pages
-        if (Path(args.output) / "index.faiss").exists():
-            raise ValueError("索引已存在，请使用新输出目录")
-        pages = validate_pages(read_rows(args.pages))
-        if not pages:
-            raise ValueError("页面清单为空")
-    if args.command != "query":
-        if args.command == "evaluate" and (Path(args.output) / "result.json").exists():
-            raise ValueError("评测结果已存在，请使用新输出目录")
-        provenance(args.output, {"page_config": config, "query_config": query_config} if getattr(args, "query_config", None) else config)
-    loading_started = time.perf_counter()
-    if args.command in ("query", "evaluate"):
-        from .query import load_query_encoder
-        if getattr(args, "benchmark", False) or getattr(args, "query_config", None):
-            import torch
-            import faiss
-            torch.set_num_threads(4)
-            torch.set_num_interop_threads(1)
-            faiss.omp_set_num_threads(1)
-        model = load_query_encoder(query_config)
-    else:
-        from .encoding import load_encoder, encode_pages
-        model = load_encoder(config)
-    loading_seconds = time.perf_counter() - loading_started
-    if args.command == "index":
+    from .search import load_index
+    from .query import load_query_encoder, benchmark
+    from .indexing import index_sizes
+    from .evaluation import evaluate, validate_candidate_corpus
+    if args.query_config:
+        from .query import validate_query_config
+        validate_query_config(query_config, config)
+    index, pages = load_index(args.index, config)
+    data = Path(args.data)
+    validate_candidate_corpus(pages, read_rows(data / "pages.jsonl"))
+    if (Path(args.output) / "result.json").exists():
+        raise ValueError("评测结果已存在，请使用新输出目录")
+    provenance(args.output, {"page_config": config, "query_config": query_config} if args.query_config else config)
+    if args.benchmark or args.query_config:
         import torch
-        from PIL import Image
-        from .encoding import processing
-        from .query import process_memory
-        memory_after_loading = process_memory()
-        probe_started = time.perf_counter()
-        with Image.open(pages[0]["preview"]) as image:
-            features = model.preprocess([image.convert("RGB")], prompt=config["prompt"],
-                                        processing_kwargs=processing(config))
-        probe = {"first_page_id": pages[0]["page_id"], "max_seq_length": model.max_seq_length,
-                 "pooling": model[1].pooling_mode, "input_ids_shape": list(features["input_ids"].shape),
-                 "image_grid_thw": features["image_grid_thw"].tolist()}
-        write_json(Path(args.output) / "encoding-probe.json", probe)
-        del features
-        if config["device"] == "cuda":
-            torch.cuda.synchronize()
-        probe_seconds = time.perf_counter() - probe_started
-        start = time.perf_counter()
-        vectors = encode_pages(model, pages, config)
-        if config["device"] == "cuda":
-            torch.cuda.synchronize()
-        encoding_seconds = time.perf_counter() - start
-        save_started = time.perf_counter()
-        save_index(vectors, pages, config, args.output)
-        result = {"pages": len(pages), "seconds": time.perf_counter() - start,
-                  "model_loading_seconds": loading_seconds, "probe_seconds": probe_seconds,
-                  "encoding_seconds": encoding_seconds, "index_save_seconds": time.perf_counter() - save_started,
-                  "pages_per_second": len(pages) / encoding_seconds,
-                  "command_seconds": time.perf_counter() - command_started,
-                  "command_timing_scope": "main entry through index save; interpreter startup and final result printing excluded",
-                  "memory_after_loading": memory_after_loading, "final_memory": process_memory(),
-                  "index_bytes": sum(p.stat().st_size for p in Path(args.output).iterdir() if p.is_file()),
-                  "peak_cuda_reserved_bytes": torch.cuda.max_memory_reserved() if config["device"] == "cuda" else None,
-                  "timing_scope": "image reads, encoding and index save; excludes model loading and preprocessing probe",
-                  "gpu": torch.cuda.get_device_name() if config["device"] == "cuda" else None,
-                  "peak_cuda_bytes": torch.cuda.max_memory_allocated() if config["device"] == "cuda" else None}
-        write_json(Path(args.output) / "build.json", result)
-        print(json.dumps(result, indent=2))
+        import faiss
+        torch.set_num_threads(4)
+        torch.set_num_interop_threads(1)
+        faiss.omp_set_num_threads(1)
+    loading_started = time.perf_counter()
+    model = load_query_encoder(query_config)
+    loading_seconds = time.perf_counter() - loading_started
+    if args.benchmark or args.query_config:
+        result = benchmark(model, query_config, index, pages, read_rows(data / "queries.jsonl"), read_json(data / "qrels.json"),
+            warmups=5 if args.benchmark else 1, repeats=3 if args.benchmark else 1)
+        result["model_loading_seconds"] = loading_seconds
+        result.update(index_sizes(args.index))
+        result["index_bytes"] = result["deployment_index_bytes"]
+        result["index_size_scope"] = "index.faiss + pages.jsonl + config.json; excludes cache/previews/run records"
     else:
-        from .evaluation import evaluate
-        data = Path(args.data)
-        if args.benchmark or args.query_config:
-            from .query import benchmark
-            result = benchmark(model, query_config, index, pages, read_rows(data / "queries.jsonl"), read_json(data / "qrels.json"),
-                warmups=5 if args.benchmark else 1, repeats=3 if args.benchmark else 1)
-            result["model_loading_seconds"] = loading_seconds
-            result["index_bytes"] = sum(p.stat().st_size for p in Path(args.index).iterdir() if p.is_file())
-        else:
-            result = evaluate(model, config, index, pages, read_rows(data / "queries.jsonl"), read_json(data / "qrels.json"))
-        if (data / "source.json").exists():
-            result["dataset"] = read_json(data / "source.json")
-            result["scope"] = result["dataset"].get("scope", result["scope"])
-        write_json(Path(args.output) / "result.json", result)
-        print(json.dumps({k: v for k, v in result.items() if k not in {"results", "requests", "dataset"}}, indent=2))
+        result = evaluate(model, config, index, pages, read_rows(data / "queries.jsonl"), read_json(data / "qrels.json"))
+    if (data / "source.json").exists():
+        result["dataset"] = read_json(data / "source.json")
+        result["scope"] = result["dataset"].get("scope", result["scope"])
+    write_json(Path(args.output) / "result.json", result)
+    print(json.dumps({k: v for k, v in result.items() if k not in {"results", "requests", "dataset"}}, indent=2))
     return 0
 
 

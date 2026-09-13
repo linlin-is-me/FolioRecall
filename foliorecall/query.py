@@ -124,17 +124,41 @@ def process_memory():
     return {"rss_bytes": values.get("VmRSS"), "peak_rss_bytes": values.get("VmHWM")}
 
 
-def weight_file_bytes(config):
+def model_file_sizes(config):
     if config.get("model_path"):
         folder = Path(config["model_path"])
     else:
         from huggingface_hub import try_to_load_from_cache
         cached = try_to_load_from_cache(config["model_id"], "config.json", revision=config["revision"])
         if not isinstance(cached, str):
-            return None
+            return {'base_weight_bytes': None, 'adapter_weight_bytes': None, 'weight_file_bytes': None, 'model_package_bytes': None}
         folder = Path(cached).parent
-    return sum(p.stat().st_size for p in folder.rglob("*") if p.is_file()
-               and (p.suffix == ".safetensors" or p.name == "pytorch_model.bin"))
+    def files(path):
+        # Restrict checkpoints to their loadable model, not optimizer/evaluation artifacts.
+        excluded = {'trainer_state.json', 'training-source.json', 'query-config.json', 'encoding.json', 'config.json.tmp'}
+        result = []
+        for p in path.rglob('*'):
+            relative = p.relative_to(path)
+            if len(relative.parts) > 1 and not relative.parts[0].split('_', 1)[0].isdigit():
+                continue
+            if p.is_file() and p.name not in excluded and (p.suffix in {'.safetensors', '.json', '.txt', '.model', '.jinja'} or p.name == 'pytorch_model.bin'):
+                result.append(p)
+        return result
+    base = files(folder)
+    adapter_path = Path(config['adapter']).resolve() if config.get('adapter') else None
+    if adapter_path is not None and not adapter_path.is_dir():
+        raise ValueError(f'适配器目录不存在: {adapter_path}')
+    adapter = files(adapter_path) if adapter_path and adapter_path != folder.resolve() else []
+    def weights(paths):
+        return sum(p.stat().st_size for p in paths if p.suffix == '.safetensors' or p.name == 'pytorch_model.bin')
+    return {'base_weight_bytes': weights(base), 'adapter_weight_bytes': weights(adapter),
+            'weight_file_bytes': weights(base) + weights(adapter),
+            'model_package_bytes': sum(p.stat().st_size for p in base + adapter),
+            'model_package_scope': 'loadable weights/config/tokenizer/projection files; excludes optimizer, evaluations and provenance'}
+
+
+def weight_file_bytes(config):
+    return model_file_sizes(config)['weight_file_bytes']
 
 
 def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3):
@@ -153,6 +177,8 @@ def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3)
     for i in range(warmups):
         retrieve(model, config, index, pages, queries[i % len(queries)]["query"], 10)
     warm_memory = process_memory()
+    loading_warmup_cuda = {'allocated_bytes': torch.cuda.max_memory_allocated(),
+                           'reserved_bytes': torch.cuda.max_memory_reserved()} if config['device'] == 'cuda' else None
     if config["device"] == "cuda":
         torch.cuda.reset_peak_memory_stats()
     requests, results, rounds = [], [], []
@@ -186,7 +212,9 @@ def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3)
                      if line.startswith("model name")), None) if Path("/proc/cpuinfo").exists() else None,
         "parameter_count": sum(p.numel() for p in model.parameters()),
         "parameter_bytes": sum(p.numel()*p.element_size() for p in model.parameters()),
-        "weight_file_bytes": weight_file_bytes(config),
+        **model_file_sizes(config),
+        "loading_warmup_cuda_peak": loading_warmup_cuda,
+        "cuda_peak_scope": "peak_cuda fields cover warm requests after reset; loading_warmup_cuda_peak covers model loading and warmup before reset",
         "dtype": config["dtype"], "device": config["device"], "batch_size": 1,
         "timing_scope": "resident text input to result JSON; encode includes tokenization and CUDA synchronization; excludes loading, transport, image rendering and metric calculation",
         "results": results, "requests": requests}

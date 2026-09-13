@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "foliorecall"
-version = "0.1.0rc1"
+version = "0.1.0rc2"
 description = "Page-level visual document retrieval with independent query students"
 readme = "README.md"
 requires-python = ">=3.10"
