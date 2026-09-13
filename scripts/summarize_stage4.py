@@ -8,7 +8,13 @@ from foliorecall.io import provenance, read_json, read_rows, write_json
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', default='outputs/stage4/summary')
+parser.add_argument('--matrix', help='Aggregate remaining formal GPU/CPU jobs instead of the historical CPU round')
 args = parser.parse_args()
+if args.matrix:
+    from foliorecall.stage4_results import summarize_matrix
+    result = summarize_matrix(args.matrix, args.output)
+    print(f"Completed {len(result['cells'])}/40; pending {len(result['pending'])}")
+    raise SystemExit(0)
 root, output = Path('outputs/stage4'), Path(args.output)
 if output.exists():
     raise SystemExit('汇总目录已存在，请使用新目录')
