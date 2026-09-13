@@ -26,27 +26,67 @@ def validate_task(pages, queries, qrels, expected):
             raise ValueError('相关性等级无效')
 
 
-def prepare_task(task, output, training_queries, hr_reuse='data/hr'):
+def training_reference(training_data):
+    """Validate an explicit split before any dataset download or output write."""
+    if training_data is None:
+        return None
+    from .data_preparation import normalized_query
+    path = Path(training_data).resolve() / 'split.json'
+    split = read_json(path)
+    if not isinstance(split, dict) or not isinstance(split.get('train'), list):
+        raise ValueError('训练切分须包含 train 记录列表')
+    rows = split['train']
+    if any(not isinstance(row, dict) or not isinstance(row.get('query'), str)
+           or not row['query'].strip() for row in rows):
+        raise ValueError('训练记录须包含非空 query 文本')
+    return {'path': str(path), 'count': len(rows),
+            'queries': {normalized_query(row['query']) for row in rows}}
+
+
+def record_overlap(output, task, queries, training, run):
+    from .data_preparation import normalized_query
+    report = {'status': 'not_checked', 'training_file': None,
+              'training_query_count': None, 'normalized_training_query_overlap': None}
+    if training is not None:
+        report.update(status='checked', training_file=training['path'],
+                      training_query_count=training['count'],
+                      normalized_training_query_overlap=[q['query_id'] for q in queries
+                          if normalized_query(q['query']) in training['queries']])
+    write_json(run / 'training-overlap.json', report)
+    report['record'] = str((run / 'training-overlap.json').resolve())
+    print(f"{task['name']}: training overlap {report['status']}; {report['record']}", flush=True)
+    return report
+
+
+def prepare_task(task, output, training=None, hr_reuse='data/hr'):
     import pyarrow.parquet as pq
     from PIL import Image
     from huggingface_hub import HfApi, hf_hub_download, try_to_load_from_cache
-    from .data_preparation import normalized_query
     output = Path(output)
     completed = output / 'source.json'
     if completed.exists():
         source = read_json(completed)
         if source['task'] != task:
             raise ValueError('已有数据集配置不符，请使用新目录')
-        validate_task(read_rows(output / 'pages.jsonl'), read_rows(output / 'queries.jsonl'),
+        queries = read_rows(output / 'queries.jsonl')
+        validate_task(read_rows(output / 'pages.jsonl'), queries,
                       read_json(output / 'qrels.json'), task)
+        run = output / 'runs' / str(time.time_ns())
+        provenance(run, {'task': task, 'reuse': True,
+                         'training_file': training['path'] if training else None})
+        overlap = record_overlap(output, task, queries, training, run)
         print(f"{task['name']}: complete, reused", flush=True)
-        return source
+        # The source file is immutable historical evidence; return the current audit.
+        return dict(source, training_overlap=overlap,
+                    normalized_training_query_overlap=overlap['normalized_training_query_overlap'])
     output.mkdir(parents=True, exist_ok=True)
     manifest = output / 'preparation-config.json'
     if manifest.exists() and read_json(manifest) != task:
         raise ValueError('未完成目录的固定版本不符')
     write_json(manifest, task)
-    provenance(output / 'runs' / str(time.time_ns()), task)
+    run = output / 'runs' / str(time.time_ns())
+    provenance(run, {'task': task, 'reuse': False,
+                     'training_file': training['path'] if training else None})
     started = time.perf_counter()
     files = HfApi().list_repo_files(task['dataset'], repo_type='dataset', revision=task['revision'])
     files = sorted(f for f in files if f.endswith('.parquet') and
@@ -114,7 +154,7 @@ def prepare_task(task, output, training_queries, hr_reuse='data/hr'):
                     raise ValueError(f'重复 qrel: {qid}/{pid}')
                 qrels[qid][pid] = score
     validate_task(pages, queries, qrels, task)
-    overlap = [q['query_id'] for q in queries if normalized_query(q['query']) in training_queries]
+    overlap = record_overlap(output, task, queries, training, run)
     write_rows(output / 'pages.jsonl', pages)
     write_rows(output / 'texts.jsonl', texts)
     write_rows(output / 'queries.jsonl', queries)
@@ -127,7 +167,8 @@ def prepare_task(task, output, training_queries, hr_reuse='data/hr'):
         'extracted_image_bytes': sum(p.stat().st_size for p in images.iterdir() if p.is_file()),
         'reused_hr_pages': len(reuse), 'download_seconds': download_seconds,
         'preparation_seconds': time.perf_counter() - started - download_seconds,
-        'normalized_training_query_overlap': overlap,
+        'training_overlap': overlap,
+        'normalized_training_query_overlap': overlap['normalized_training_query_overlap'],
         'limitations': ['Full task retained even if an overlap is found; upstream training overlap and document-level isolation unverified'] +
             (['20 HR queries were previously used for flow checks; remaining HR queries were not selected by score'] if task['name'] == 'hr' else [])}
     write_json(completed, source)
@@ -135,11 +176,9 @@ def prepare_task(task, output, training_queries, hr_reuse='data/hr'):
     return source
 
 
-def prepare_benchmark(config, output, training_data='data/vdr-stage2', task_name=None):
-    from .data_preparation import normalized_query
-    split = read_json(Path(training_data) / 'split.json')
-    training_queries = {normalized_query(row['query']) for row in split['train']}
+def prepare_benchmark(config, output, training_data=None, task_name=None):
+    training = training_reference(training_data)
     selected = [t for t in config['tasks'] if task_name is None or t['name'] == task_name]
     if not selected:
         raise ValueError('未知任务名')
-    return [prepare_task(task, Path(output) / task['name'], training_queries) for task in selected]
+    return [prepare_task(task, Path(output) / task['name'], training) for task in selected]

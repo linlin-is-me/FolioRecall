@@ -11,7 +11,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='configs/stage4-evaluation.json')
     parser.add_argument('--output', default='outputs/stage4/data')
-    parser.add_argument('--training-data', default='data/vdr-stage2')
+    parser.add_argument('--training-data', help='可选训练切分目录；省略时明确记录交集未检查')
     parser.add_argument('--task')
     args = parser.parse_args()
     prepare_benchmark(read_json(args.config), args.output, args.training_data, args.task)
