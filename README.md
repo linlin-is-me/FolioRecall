@@ -53,7 +53,7 @@ CUDA_VISIBLE_DEVICES= HF_HUB_OFFLINE=1 foliorecall serve \
 
 访问 `http://127.0.0.1:7860`。首次加载学生实测约 44 秒，之后模型保持驻留。42 页演示的暖态页面显示准备 P50/P95 为 272/285 ms，Gradio 客户端响应为 1.038/1.069 秒；后者仍不含预览下载与浏览器渲染，不能用核心约 20 ms 代替界面延迟。CPU 学生权重约 274 MB，示例 ZIP 约 14.63 MB；rc1历史安装产物位于 `outputs/stage4/packages/final`，示例为 `outputs/stage4/demo-bundle.zip`。尚无公开下载地址；42页素材及模型包内容已完成本地核对，公开发布仍待授权。
 
-安装、示例获取位置、CPU快速体验、GPU自有PDF入口及评测命令见[首版使用与评测](doc/首版使用与评测.md)。当前本地候选为 `0.1.0rc2`，wheel和源码包位于 `outputs/stage4/packages/rc2-final`，rc1原包保留；尚未发布到PyPI或Release。自有代码采用[Apache-2.0](LICENSE)，上游代码与素材说明见[NOTICE](NOTICE)。
+安装、示例获取位置、CPU快速体验、GPU自有PDF入口及评测命令见[首版使用与评测](doc/首版使用与评测.md)。当前本地候选为 `0.1.0rc2`，wheel和源码包位于 `outputs/stage4/packages/rc2-post-review`，旧rc1和rc2包保留；LoRA历史库与导出包的配套命令见使用说明，已补实际CLI验证。尚未发布到PyPI或Release。自有代码采用[Apache-2.0](LICENSE)，上游代码与素材说明见[NOTICE](NOTICE)。
 
 ## 第三阶段：查询学生与蒸馏比较已完成
 
