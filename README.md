@@ -16,7 +16,7 @@ FolioRecall 面向英文视觉文档检索，支持 PDF／页面图像导入、�
 
 后续GPU任务的准备代码已升级至 `0.1.0rc2`：建库支持64页分块续接、完整索引原子保存，学生恢复增加完成状态与回退保护，资源统计区分适配器、部署索引及各阶段显存。相关CPU测试已通过；新增GPU路径尚待用户通知可用时段后验证，独立GPU预算为10小时。下列质量与演示数字仍来自已完成的rc1首轮，不能当作rc2的GPU验证结果。接续入口见[使用说明](doc/首版使用与评测.md#gpu接续与恢复rc2)。
 
-非 GPU 首轮已完成，第四阶段仍为部分完成。默认部署采用原始教师离线建库、公开 ML 学生 GPU BF16 查询，同时提供 CPU FP32 快速体验。`0.1.0rc1` wheel 已在 Python 3.10、Ubuntu／WSL 的独立 CPU 环境完成真实查询：无教师缓存、无 CUDA、torchvision 或训练组件，非 Git 目录与移动后的示例均可使用。GPU 正式评测、自有 PDF 安装态建库及 GPU 恢复验证等待用户通知和新预算；代码、模型与 Release 均未发布。
+非 GPU 首轮已完成，第四阶段仍为部分完成。默认部署采用原始教师离线建库、公开 ML 学生 GPU BF16 查询，同时提供 CPU FP32 快速体验。`0.1.0rc2` wheel 已在 Python 3.10、Ubuntu／WSL 的独立 CPU 环境完成真实查询：无教师缓存、无 CUDA、torchvision 或训练组件，非 Git 目录与移动后的示例均可使用。GPU 正式评测、自有 PDF 安装态建库及 GPU 恢复验证等待用户通知可用时段；10小时预算已确定，代码、模型与 Release 均未发布。
 
 ![隔离 CPU 环境中的真实检索演示](doc/assets/stage4-cpu-demo.png)
 
@@ -46,9 +46,9 @@ CUDA_VISIBLE_DEVICES= HF_HUB_OFFLINE=1 foliorecall serve \
   --index . --config configs/baseline.json --query-config configs/student-ml-cpu.json
 ```
 
-访问 `http://127.0.0.1:7860`。首次加载学生实测约 44 秒，之后模型保持驻留。42 页演示的暖态页面显示准备 P50/P95 为 272/285 ms，Gradio 客户端响应为 1.038/1.069 秒；后者仍不含预览下载与浏览器渲染，不能用核心约 20 ms 代替界面延迟。CPU 学生权重约 274 MB，示例 ZIP 约 14.63 MB；本地安装产物位于 `outputs/stage4/packages/final`，示例为 `outputs/stage4/demo-bundle.zip`。尚无公开下载地址，素材在发布前仍需最终核对。
+访问 `http://127.0.0.1:7860`。首次加载学生实测约 44 秒，之后模型保持驻留。42 页演示的暖态页面显示准备 P50/P95 为 272/285 ms，Gradio 客户端响应为 1.038/1.069 秒；后者仍不含预览下载与浏览器渲染，不能用核心约 20 ms 代替界面延迟。CPU 学生权重约 274 MB，示例 ZIP 约 14.63 MB；rc1历史安装产物位于 `outputs/stage4/packages/final`，示例为 `outputs/stage4/demo-bundle.zip`。尚无公开下载地址，素材在发布前仍需最终核对。
 
-安装、示例获取位置、CPU快速体验、GPU自有PDF入口及评测命令见[首版使用与评测](doc/首版使用与评测.md)。本地候选版本为 `0.1.0rc1`；不要将它表述为已发布的PyPI包或Release。自有代码采用[Apache-2.0](LICENSE)，上游代码与素材说明见[NOTICE](NOTICE)。
+安装、示例获取位置、CPU快速体验、GPU自有PDF入口及评测命令见[首版使用与评测](doc/首版使用与评测.md)。当前本地候选为 `0.1.0rc2`，wheel和源码包位于 `outputs/stage4/packages/rc2-ready`，rc1原包保留；尚未发布到PyPI或Release。自有代码采用[Apache-2.0](LICENSE)，上游代码与素材说明见[NOTICE](NOTICE)。
 
 ## 第三阶段：查询学生与蒸馏比较已完成
 

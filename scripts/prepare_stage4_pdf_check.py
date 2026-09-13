@@ -2,6 +2,7 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 import argparse
+from importlib.metadata import version
 from pathlib import Path
 import shutil
 import subprocess
@@ -18,7 +19,7 @@ if workspace.exists() or output.exists():
 workspace.mkdir(parents=True)
 os.chdir(workspace)
 import foliorecall
-from foliorecall.io import provenance, read_json, write_json
+from foliorecall.io import provenance, read_json, read_rows, write_json
 if Path(foliorecall.__file__).resolve().is_relative_to(repo):
     raise RuntimeError('安装态验证意外导入源码')
 state = provenance(output, {'repo': str(repo), 'workspace': str(workspace), 'operation': 'CPU PDF import; no model computation'})
@@ -32,12 +33,25 @@ with (output / 'import.log').open('x') as log:
 import_result = read_json(workspace / 'pages/import-result.json')
 if import_result['pages'] != 45 or import_result['errors']:
     raise RuntimeError('两份PDF导入结果不符合既有45页范围')
+pages = read_rows(workspace / 'pages/pages.jsonl')
+source_checks = []
+for source, path in zip(sources, inputs):
+    rows = [row for row in pages if row['source'] == path]
+    expected = source['page_number']
+    if ([row['page_number'] for row in rows] != list(range(1, expected + 1))
+            or any(row['document_name'] != source['doc_name'] for row in rows)
+            or any(not Path(row['preview']).is_file() for row in rows)):
+        raise RuntimeError(f"来源、物理页码或预览不匹配: {source['doc_name']}")
+    source_checks.append({'source': path, 'url': source['url'], 'pages': expected,
+                          'physical_pages_and_previews_valid': True})
 (workspace / 'configs').mkdir()
 for name in ('baseline.json', 'student-ml-cpu.json', 'student-ml-cuda.json'):
     shutil.copyfile(repo / 'configs' / name, workspace / 'configs' / name)
 shutil.copyfile(repo / 'outputs/stage4/demo-bundle/queries.json', workspace / 'queries.json')
 write_json(output / 'result.json', {'package_version': foliorecall.__version__, 'installed_file': foliorecall.__file__,
     'workspace': str(workspace), 'import': import_result, 'cuda_visible_devices': '',
+    'dependencies': {name: version(name) for name in ('torch', 'torchvision', 'gradio', 'pypdfium2')},
+    'source_checks': source_checks,
     'index_command_pending': [cli, 'index', '--config', str(workspace / 'configs/baseline.json'),
         '--pages', str(workspace / 'pages/pages.jsonl'), '--output', str(workspace / 'index'), '--chunk-size', '64'],
     'gpu_model_status': 'not run; awaiting user GPU window'})
