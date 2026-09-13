@@ -38,6 +38,7 @@ def export(output):
         else:
             config = read_json(source / 'query-config.json')
             config['model_path'] = '.'
+            write_json(target / 'query-config.json', config)
             write_json(target / 'query-gpu.json', config)
             write_json(target / 'query-cpu.json', dict(config, device='cpu', dtype='float32'))
             instructions = '在本包目录运行 query --config <原始教师配置> --query-config query-cpu.json --index <匹配原始教师库> <查询>；GPU使用query-gpu.json。model_path相对当前工作目录解析，包内骨干、tokenizer、pooling、两层投影和Normalize一起加载。在线不需要教师权重。'

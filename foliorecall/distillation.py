@@ -57,6 +57,8 @@ def validate_resume(output, resume, settings, rows, stop_after=None):
         raise ValueError('训练已完成或已有最终模型，不能覆盖；请使用新输出目录')
     state = read_json(resume / 'trainer_state.json')
     step = state['global_step']
+    if resume.name != f'checkpoint-{step}':
+        raise ValueError('检查点目录与实际步骤不符')
     checkpoints = [p for p in output.glob('checkpoint-*') if p.is_dir() and p.name.split('-')[-1].isdigit()]
     if not checkpoints or resume != max(checkpoints, key=lambda p: int(p.name.split('-')[-1])).resolve():
         raise ValueError('只能恢复最新检查点；拒绝回退并覆盖后续产物')

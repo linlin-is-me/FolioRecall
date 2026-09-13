@@ -1,6 +1,7 @@
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from foliorecall.distillation import validate_resume
 from foliorecall.io import write_json, write_rows
@@ -8,6 +9,25 @@ from foliorecall.query import model_file_sizes
 
 
 class ResumeGuardTests(unittest.TestCase):
+    def test_gpu_memory_boundaries_are_separate_without_using_cuda(self):
+        import torch
+        from foliorecall.query import benchmark
+        from types import SimpleNamespace
+        model = torch.nn.Linear(1, 1)
+        times = {'encode_seconds': .01, 'query_seconds': .02, 'request_seconds': .03}
+        with patch('foliorecall.query.retrieve', return_value=([{'page_id': 'p'}], '[]', times)), \
+             patch('foliorecall.query.model_file_sizes', return_value={'weight_file_bytes': 8}), \
+             patch('torch.cuda.max_memory_allocated', side_effect=[300, 200]), \
+             patch('torch.cuda.max_memory_reserved', side_effect=[500, 400]), \
+             patch('torch.cuda.reset_peak_memory_stats') as reset, \
+             patch('torch.cuda.get_device_name', return_value='mock GPU'):
+            r = benchmark(model, {'device': 'cuda', 'dtype': 'bfloat16'}, SimpleNamespace(ntotal=1),
+                [{'page_id': 'p'}], [{'query_id': 'q', 'query': 'test'}], {'q': {'p': 1}}, 1, 1)
+        reset.assert_called_once()
+        self.assertEqual(r['loading_warmup_cuda_peak'], {'allocated_bytes': 300, 'reserved_bytes': 500})
+        self.assertEqual(r['peak_cuda_bytes'], 200)
+        self.assertEqual(r['peak_cuda_reserved_bytes'], 400)
+
     def test_latest_incomplete_checkpoint_only(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

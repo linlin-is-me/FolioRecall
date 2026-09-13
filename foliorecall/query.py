@@ -135,7 +135,7 @@ def model_file_sizes(config):
         folder = Path(cached).parent
     def files(path):
         # Restrict checkpoints to their loadable model, not optimizer/evaluation artifacts.
-        excluded = {'trainer_state.json', 'training-source.json', 'query-config.json', 'encoding.json', 'config.json.tmp'}
+        excluded = {'trainer_state.json', 'training-source.json', 'encoding.json', 'config.json.tmp'}
         result = []
         for p in path.rglob('*'):
             relative = p.relative_to(path)

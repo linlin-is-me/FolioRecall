@@ -1,5 +1,6 @@
 """One explicitly enabled GPU job, with a separate ten-hour stage-four budget."""
 import argparse
+import math
 import os
 from pathlib import Path
 import re
@@ -36,6 +37,8 @@ def main():
                 if not (folder / 'process.json').is_file():
                     raise ValueError(f'上次GPU进程未闭合，先核对PID与耗时，不能忽略其预算: {folder}')
                 records.append(read_json(folder / 'process.json'))
+        if any(not math.isfinite(r['seconds']) or r['seconds'] < 0 for r in records):
+            raise ValueError('GPU预算记录含无效耗时，请先核对既有记录')
         used = sum(r['seconds'] for r in records)
         reserve = 0 if args.use_reserve else 3600
         # Reserve two minutes for cooperative checkpointing and process cleanup.
