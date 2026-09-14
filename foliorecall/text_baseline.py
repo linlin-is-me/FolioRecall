@@ -9,6 +9,7 @@ import unicodedata
 import numpy as np
 
 from .evaluation import metrics, validate_candidate_corpus
+from .benchmark_data import load_dataset_provenance
 from .io import provenance, read_json, read_rows, write_json
 from .query import process_memory
 
@@ -38,6 +39,7 @@ def evaluate_text(config, data, output):
     output, data = Path(output), Path(data)
     if output.exists():
         raise ValueError('文本评测目录已存在，请使用新输出目录')
+    dataset = load_dataset_provenance(data)
     provenance(output, config)
     started = time.perf_counter()
     pages, texts = read_rows(data / 'pages.jsonl'), read_rows(data / 'texts.jsonl')
@@ -80,7 +82,7 @@ def evaluate_text(config, data, output):
         requests.extend(current)
         rounds.append(summarize(current))
         print(f'BM25 repeat {repeat+1}/{repeats} complete', flush=True)
-    result = {'method': 'BM25Okapi on upstream page markdown', 'dataset': read_json(data / 'source.json'),
+    result = {'method': 'BM25Okapi on upstream page markdown', 'dataset': dataset,
         'queries': len(queries), 'candidates': len(pages), 'config': config['bm25'],
         'metrics': {key: float(np.mean([r[key] for r in results])) for key in ('nDCG@10', 'Recall@5', 'Recall@10')},
         'build_seconds': build_seconds, 'index_bytes': index_path.stat().st_size,

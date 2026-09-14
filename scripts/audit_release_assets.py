@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from foliorecall.io import provenance, read_json, write_json
 
 parser = argparse.ArgumentParser(__doc__)
-parser.add_argument('--release', default='outputs/stage4/release-v0.1.0rc2')
+parser.add_argument('--release', default='outputs/stage4/release-v0.1.0rc2-post-audit')
 args = parser.parse_args()
 release = Path(args.release)
 output = release / 'validation/materials'

@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from foliorecall.benchmark_data import prepare_benchmark, validate_task
+from foliorecall.benchmark_data import load_dataset_provenance, prepare_benchmark, validate_task
 from foliorecall.io import read_json, write_json
 
 
@@ -77,9 +77,11 @@ class BenchmarkDataTests(unittest.TestCase):
             changed = self.prepare(self.split(' abc\tQUERY '))
             self.assertEqual(changed['training_overlap']['status'], 'checked')
             self.assertEqual(changed['normalized_training_query_overlap'], ['q'])
+            self.assertEqual(load_dataset_provenance(source.parent)['training_overlap'], changed['training_overlap'])
             omitted = self.prepare()
             self.assertIsNone(omitted['normalized_training_query_overlap'])
             self.assertEqual(omitted['training_overlap']['status'], 'not_checked')
+            self.assertEqual(load_dataset_provenance(source.parent)['training_overlap'], omitted['training_overlap'])
             download.assert_not_called()
         self.assertEqual(source.read_bytes(), original)
         self.assertNotEqual(initial['training_overlap']['record'], changed['training_overlap']['record'])

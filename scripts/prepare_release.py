@@ -196,7 +196,7 @@ def finalize(output):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(__doc__)
-    parser.add_argument('--output', default='outputs/stage4/release-v0.1.0rc2')
+    parser.add_argument('--output', default='outputs/stage4/release-v0.1.0rc2-post-audit')
     parser.add_argument('--finalize', action='store_true')
     args = parser.parse_args()
     (finalize if args.finalize else prepare)(Path(args.output))

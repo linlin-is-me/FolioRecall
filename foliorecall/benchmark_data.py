@@ -52,10 +52,51 @@ def record_overlap(output, task, queries, training, run):
                       training_query_count=training['count'],
                       normalized_training_query_overlap=[q['query_id'] for q in queries
                           if normalized_query(q['query']) in training['queries']])
-    write_json(run / 'training-overlap.json', report)
+    temporary = run / 'training-overlap.json.tmp'
+    write_json(temporary, report)
+    temporary.replace(run / 'training-overlap.json')
     report['record'] = str((run / 'training-overlap.json').resolve())
     print(f"{task['name']}: training overlap {report['status']}; {report['record']}", flush=True)
     return report
+
+
+def load_dataset_provenance(data):
+    """Attach the newest completed overlap audit without changing historical sources."""
+    data = Path(data)
+    source = read_json(data / 'source.json')
+    runs = data / 'runs'
+    audits = [run / 'training-overlap.json' for run in runs.iterdir()
+              if run.is_dir() and run.name.isascii() and run.name.isdecimal()
+              and (run / 'training-overlap.json').is_file()] if runs.is_dir() else []
+    if not audits:
+        return source
+    record = max(audits, key=lambda path: (int(path.parent.name), path.parent.name))
+    run = read_json(record.parent / 'run.json')
+    run_config = run.get('config') if isinstance(run, dict) else None
+    task = source.get('task')
+    if not isinstance(task, dict) or not isinstance(run_config, dict) or run_config.get('task') != task:
+        raise ValueError(f'交集检查与当前任务配置不符: {record}')
+    queries = read_rows(data / 'queries.jsonl')
+    validate_task(read_rows(data / 'pages.jsonl'), queries, read_json(data / 'qrels.json'), task)
+    report = read_json(record)
+    required = ('status', 'training_file', 'training_query_count', 'normalized_training_query_overlap')
+    if not isinstance(report, dict) or any(key not in report for key in required):
+        raise ValueError(f'交集检查记录格式无效: {record}')
+    status, training_file, count, overlap = (report[key] for key in required)
+    if status == 'not_checked':
+        valid = training_file is None and count is None and overlap is None
+    elif status == 'checked':
+        valid = (isinstance(training_file, str) and bool(training_file.strip())
+                 and type(count) is int and count >= 0
+                 and isinstance(overlap, list) and all(isinstance(qid, str) for qid in overlap)
+                 and len(overlap) == len(set(overlap))
+                 and set(overlap).issubset({q['query_id'] for q in queries}))
+    else:
+        valid = False
+    if not valid or run_config.get('training_file') != training_file:
+        raise ValueError(f'交集检查状态、训练来源或查询 ID 无效: {record}')
+    return dict(source, training_overlap=dict(report, record=str(record.resolve())),
+                normalized_training_query_overlap=overlap)
 
 
 def prepare_task(task, output, training=None, hr_reuse='data/hr'):

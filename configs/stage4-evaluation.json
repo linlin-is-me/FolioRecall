@@ -12,5 +12,5 @@
   "gpu_candidates": ["original", "lora750", "public-en", "public-ml", "distilled94"],
   "cpu_candidates": ["public-en", "public-ml", "distilled94"],
   "default_deployment": "public-ml GPU BF16; original teacher page index",
-  "gpu_status": "waiting for user notification and a new compute budget"
+  "gpu_status": "completed: five-domain GPU evaluations and installation/recovery validation; see outputs/stage4/formal-complete"
 }

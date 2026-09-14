@@ -157,6 +157,8 @@ def main():
     index, pages = load_index(args.index, config)
     data = Path(args.data)
     validate_candidate_corpus(pages, read_rows(data / "pages.jsonl"))
+    from .benchmark_data import load_dataset_provenance
+    dataset = load_dataset_provenance(data) if (data / "source.json").exists() else None
     if (Path(args.output) / "result.json").exists():
         raise ValueError("评测结果已存在，请使用新输出目录")
     provenance(args.output, {"page_config": config, "query_config": query_config} if args.query_config else config)
@@ -178,8 +180,8 @@ def main():
         result["index_size_scope"] = "index.faiss + pages.jsonl + config.json; excludes cache/previews/run records"
     else:
         result = evaluate(model, config, index, pages, read_rows(data / "queries.jsonl"), read_json(data / "qrels.json"))
-    if (data / "source.json").exists():
-        result["dataset"] = read_json(data / "source.json")
+    if dataset is not None:
+        result["dataset"] = dataset
         result["scope"] = result["dataset"].get("scope", result["scope"])
     write_json(Path(args.output) / "result.json", result)
     print(json.dumps({k: v for k, v in result.items() if k not in {"results", "requests", "dataset"}}, indent=2))

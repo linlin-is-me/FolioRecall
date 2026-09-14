@@ -99,8 +99,8 @@ def finish(release):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(__doc__)
-    parser.add_argument('--release', default='outputs/stage4/release-v0.1.0rc2')
-    parser.add_argument('--workspace', default='/mnt/d/foliorecall_cache/stage4_cpu/release-rc2-20260914')
+    parser.add_argument('--release', default='outputs/stage4/release-v0.1.0rc2-post-audit')
+    parser.add_argument('--workspace', default='/mnt/d/foliorecall_cache/stage4_cpu/release-rc2-post-audit-20260915')
     parser.add_argument('--python', default='/mnt/d/foliorecall_cache/envs/stage4_cpu/bin/python')
     parser.add_argument('--finish', action='store_true')
     args = parser.parse_args()
