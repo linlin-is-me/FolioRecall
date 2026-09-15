@@ -1,0 +1,247 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="690" viewBox="0 0 1280 690" role="img" aria-labelledby="title description">
+<title id="title">FolioRecall：离线页面建库与在线查询检索</title>
+<desc id="description">离线使用 Qwen3-VL-Embedding-2B 将文档页面编码为 2048 维单位向量，保存至 FAISS 索引；在线由公开 NanoVDR ML 学生编码原始英文查询，CPU 内积检索返回排序页面与 JSON。预览文件独立保存，启动时校验教师与索引身份。页面图形及向量单元仅为示意。</desc>
+<defs>
+<style>text{font-family:Arial,"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif} .math{font-family:"Cambria Math",Cambria,"Times New Roman",serif;font-style:italic} .edge{fill:none;stroke-width:1.7;stroke-linejoin:round;stroke-linecap:round}</style>
+<marker id="a-ink" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 4 0 8z" fill="#e2e8ee"/></marker>
+<marker id="a-purple" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 4 0 8z" fill="#bba6df"/></marker>
+<marker id="a-teal" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 4 0 8z" fill="#85c2af"/></marker>
+<marker id="a-blue" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 4 0 8z" fill="#91b7d6"/></marker>
+<marker id="a-muted" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 4 0 8z" fill="#a4b0ba"/></marker>
+</defs>
+<rect width="1280" height="690" fill="#0d1117"/>
+<text x="24" y="32" fill="#e2e8ee" font-size="22" font-weight="700" text-anchor="start">(a)</text>
+<text x="63" y="32" fill="#e2e8ee" font-size="20" font-weight="600" text-anchor="start">离线页面建库</text>
+<text x="1256" y="32" fill="#a4b0ba" font-size="15" font-weight="400" text-anchor="end">离线编码 · 本地保存</text>
+<path d="M24 47H1256" fill="none" stroke="#33424d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M161 107V77H1150V124" fill="none" stroke="#a4b0ba" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-muted)" stroke-dasharray="5 5"/>
+<rect x="488" y="65" width="312" height="23" rx="0" fill="#0d1117" stroke="#0d1117" stroke-width="0"/>
+<text x="644" y="81" fill="#a4b0ba" font-size="14" font-weight="400" text-anchor="middle">单独保存预览文件</text>
+<g transform="translate(63,116) scale(1.02)">
+<rect x="13" y="-12" width="124" height="162" rx="2" fill="#1e2a34" stroke="#33424d" stroke-width="1.3"/>
+<rect x="7" y="-6" width="124" height="162" rx="2" fill="#17212b" stroke="#33424d" stroke-width="1.3"/>
+<rect x="0" y="0" width="124" height="162" rx="2" fill="#17212b" stroke="#a4b0ba" stroke-width="1.2"/>
+<rect x="12" y="12" width="57" height="5" rx="0" fill="#91b7d6" stroke="#91b7d6" stroke-width="0"/>
+<rect x="12" y="23" width="88" height="3" rx="0" fill="#33424d" stroke="#33424d" stroke-width="0"/>
+<rect x="12" y="37" width="100" height="65" rx="0" fill="#1e2a34" stroke="#33424d" stroke-width="0.7"/>
+<path d="M22 44V91H103" fill="none" stroke="#a4b0ba" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M23 80 39 74 55 78 72 64 87 59 103 49" fill="none" stroke="#91b7d6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M23 86 39 83 55 83 72 77 87 73 103 66" fill="none" stroke="#73618d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 115H55 M64 115H111" fill="none" stroke="#33424d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 124H55 M64 124H111" fill="none" stroke="#33424d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 133H55 M64 133H111" fill="none" stroke="#33424d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 142H55 M64 142H111" fill="none" stroke="#33424d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="315" y="151" width="205" height="102" rx="3" fill="#302a40" stroke="#bba6df" stroke-width="0.9"/>
+<rect x="309" y="157" width="205" height="102" rx="3" fill="#302a40" stroke="#bba6df" stroke-width="0.9"/>
+<rect x="303" y="163" width="205" height="102" rx="3" fill="#302a40" stroke="#bba6df" stroke-width="1.5"/>
+<text x="405.5" y="206.86" fill="#bba6df" font-size="30" font-weight="400" text-anchor="middle" class="math">f<tspan baseline-shift="sub" font-size="70%">θ</tspan></text>
+<text x="405.5" y="246.64" fill="#bba6df" font-size="17" font-weight="600" text-anchor="middle">Qwen3-VL</text>
+<rect x="584.5" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="584.5" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.320"/>
+<rect x="601.375" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="601.375" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.485"/>
+<rect x="618.25" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="618.25" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.155"/>
+<rect x="635.125" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="635.125" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.320"/>
+<rect x="652.0" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="652.0" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.485"/>
+<rect x="668.875" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="668.875" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.155"/>
+<rect x="685.75" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="685.75" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.320"/>
+<rect x="702.625" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="702.625" y="161.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.485"/>
+<rect x="584.5" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="584.5" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.210"/>
+<rect x="601.375" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="601.375" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.375"/>
+<rect x="618.25" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="618.25" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.540"/>
+<rect x="635.125" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="635.125" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.210"/>
+<rect x="652.0" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="652.0" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.375"/>
+<rect x="668.875" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="668.875" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.540"/>
+<rect x="685.75" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="685.75" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.210"/>
+<rect x="702.625" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="702.625" y="180.16666666666666" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.375"/>
+<rect x="584.5" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="584.5" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.100"/>
+<rect x="601.375" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="601.375" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.265"/>
+<rect x="618.25" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="618.25" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.430"/>
+<rect x="635.125" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="635.125" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.100"/>
+<rect x="652.0" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="652.0" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.265"/>
+<rect x="668.875" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="668.875" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.430"/>
+<rect x="685.75" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="685.75" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.100"/>
+<rect x="702.625" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="702.625" y="198.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.265"/>
+<rect x="584.5" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="584.5" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.485"/>
+<rect x="601.375" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="601.375" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.155"/>
+<rect x="618.25" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="618.25" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.320"/>
+<rect x="635.125" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="635.125" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.485"/>
+<rect x="652.0" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="652.0" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.155"/>
+<rect x="668.875" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="668.875" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.320"/>
+<rect x="685.75" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="685.75" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.485"/>
+<rect x="702.625" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="702.625" y="217.5" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.155"/>
+<rect x="584.5" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="584.5" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.375"/>
+<rect x="601.375" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="601.375" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.540"/>
+<rect x="618.25" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="618.25" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.210"/>
+<rect x="635.125" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="635.125" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.375"/>
+<rect x="652.0" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="652.0" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.540"/>
+<rect x="668.875" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="668.875" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.210"/>
+<rect x="685.75" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="685.75" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.375"/>
+<rect x="702.625" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="702.625" y="236.16666666666669" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.540"/>
+<rect x="584.5" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="584.5" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.265"/>
+<rect x="601.375" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="601.375" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.430"/>
+<rect x="618.25" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="618.25" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.100"/>
+<rect x="635.125" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="635.125" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.265"/>
+<rect x="652.0" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="652.0" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.430"/>
+<rect x="668.875" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="668.875" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.100"/>
+<rect x="685.75" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="685.75" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.265"/>
+<rect x="702.625" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#302a40" stroke="#bba6df" stroke-width="0.55"/>
+<rect x="702.625" y="254.83333333333334" width="13.875" height="15.666666666666668" rx="1" fill="#bba6df" opacity="0.430"/>
+<path d="M576 157h-5v118h5 M725 157h5v118h-5" fill="none" stroke="#bba6df" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M820 176 C820 156,990 156,990 176 V257 C990 277,820 277,820 257Z" fill="#213447" stroke="#91b7d6" stroke-width="1.4"/>
+<path d="M820 176 C820 196,990 196,990 176" fill="none" stroke="#91b7d6" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="905.0" y="218" fill="#91b7d6" font-size="19" font-weight="600" text-anchor="middle">页面索引</text>
+<text x="905.0" y="243" fill="#91b7d6" font-size="14" font-weight="400" text-anchor="middle">向量与页面 ID</text>
+<g transform="translate(1102,132) scale(0.69)">
+<rect x="13" y="-12" width="124" height="162" rx="2" fill="#1e2a34" stroke="#33424d" stroke-width="1.3"/>
+<rect x="7" y="-6" width="124" height="162" rx="2" fill="#17212b" stroke="#33424d" stroke-width="1.3"/>
+<rect x="0" y="0" width="124" height="162" rx="2" fill="#17212b" stroke="#a4b0ba" stroke-width="1.2"/>
+<rect x="12" y="12" width="57" height="5" rx="0" fill="#91b7d6" stroke="#91b7d6" stroke-width="0"/>
+<rect x="12" y="23" width="88" height="3" rx="0" fill="#33424d" stroke="#33424d" stroke-width="0"/>
+<path d="M12 39H112" fill="none" stroke="#33424d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 52H112" fill="none" stroke="#33424d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 65H112" fill="none" stroke="#33424d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 78H112" fill="none" stroke="#33424d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 91H112" fill="none" stroke="#33424d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 104H112" fill="none" stroke="#33424d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 39V104" fill="none" stroke="#33424d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M42 39V104" fill="none" stroke="#33424d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M77 39V104" fill="none" stroke="#33424d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M112 39V104" fill="none" stroke="#33424d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="13" y="40" width="98" height="11" rx="0" fill="#213447" stroke="#213447" stroke-width="0"/>
+<path d="M12 118H111" fill="none" stroke="#33424d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 129H111" fill="none" stroke="#33424d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 140H111" fill="none" stroke="#33424d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<path d="M214 215H283" fill="none" stroke="#e2e8ee" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-ink)"/>
+<path d="M531 215H566" fill="none" stroke="#e2e8ee" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-ink)"/>
+<path d="M737 215H801" fill="none" stroke="#e2e8ee" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-ink)"/>
+<text x="129" y="309" fill="#e2e8ee" font-size="20" font-weight="600" text-anchor="middle">文档页面</text>
+<text x="129" y="332" fill="#a4b0ba" font-size="15" font-weight="400" text-anchor="middle">PDF / 页面图像</text>
+<text x="405" y="309" fill="#e2e8ee" font-size="20" font-weight="600" text-anchor="middle">页面教师</text>
+<text x="405" y="332" fill="#a4b0ba" font-size="15" font-weight="400" text-anchor="middle">Qwen3-VL-Embedding-2B</text>
+<text x="650" y="309" fill="#e2e8ee" font-size="20" font-weight="600" text-anchor="middle">页面向量</text>
+<text x="650" y="333" fill="#bba6df" font-size="18" font-weight="400" text-anchor="middle" class="math">dᵢ = <tspan font-style="normal">normalize</tspan>(f<tspan baseline-shift="sub" font-size="70%">θ</tspan>(Iᵢ))</text>
+<text x="905" y="309" fill="#e2e8ee" font-size="20" font-weight="600" text-anchor="middle">已保存的 FAISS 索引</text>
+<text x="905" y="332" fill="#a4b0ba" font-size="15" font-weight="400" text-anchor="middle">元数据与编码器身份</text>
+<text x="1147" y="286" fill="#e2e8ee" font-size="18" font-weight="600" text-anchor="middle">预览文件</text>
+<text x="1147" y="308" fill="#a4b0ba" font-size="14" font-weight="400" text-anchor="middle">由元数据引用</text>
+<text x="24" y="389" fill="#e2e8ee" font-size="22" font-weight="700" text-anchor="start">(b)</text>
+<text x="63" y="389" fill="#e2e8ee" font-size="20" font-weight="600" text-anchor="start">在线查询检索</text>
+<path d="M24 404H1256" fill="none" stroke="#33424d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="716" y="389" fill="#a4b0ba" font-size="15" font-weight="400" text-anchor="end">逐条编码查询 · 公开 ML 学生</text>
+<path d="M905 345V444" fill="none" stroke="#91b7d6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-blue)"/>
+<rect x="919" y="350" width="94" height="23" rx="0" fill="#0d1117" stroke="#0d1117" stroke-width="0"/>
+<text x="926" y="366" fill="#91b7d6" font-size="14" font-weight="400" text-anchor="start">复用索引</text>
+<path d="M1147 320V446" fill="none" stroke="#a4b0ba" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-muted)" stroke-dasharray="5 5"/>
+<rect x="33" y="473" width="197" height="88" rx="3" fill="#1e2a34" stroke="#33424d" stroke-width="1.3"/>
+<text x="48" y="505" fill="#e2e8ee" font-size="19" font-weight="600" text-anchor="start">英文查询</text>
+<text x="48" y="531" fill="#a4b0ba" font-size="16" font-weight="400" text-anchor="start">原始文本</text>
+<text x="208" y="545" fill="#85c2af" font-size="23" font-weight="400" text-anchor="end" class="math">t</text>
+<rect x="336" y="467" width="162" height="77" rx="3" fill="#203a34" stroke="#85c2af" stroke-width="0.9"/>
+<rect x="330" y="473" width="162" height="77" rx="3" fill="#203a34" stroke="#85c2af" stroke-width="0.9"/>
+<rect x="324" y="479" width="162" height="77" rx="3" fill="#203a34" stroke="#85c2af" stroke-width="1.5"/>
+<text x="405.0" y="508.26" fill="#85c2af" font-size="27" font-weight="400" text-anchor="middle" class="math">g<tspan baseline-shift="sub" font-size="70%">φ</tspan></text>
+<text x="405.0" y="542.14" fill="#85c2af" font-size="17" font-weight="600" text-anchor="middle">NanoVDR ML</text>
+<rect x="587.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#203a34" stroke="#85c2af" stroke-width="0.55"/>
+<rect x="587.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#85c2af" opacity="0.320"/>
+<rect x="603.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#203a34" stroke="#85c2af" stroke-width="0.55"/>
+<rect x="603.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#85c2af" opacity="0.485"/>
+<rect x="619.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#203a34" stroke="#85c2af" stroke-width="0.55"/>
+<rect x="619.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#85c2af" opacity="0.155"/>
+<rect x="635.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#203a34" stroke="#85c2af" stroke-width="0.55"/>
+<rect x="635.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#85c2af" opacity="0.320"/>
+<rect x="651.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#203a34" stroke="#85c2af" stroke-width="0.55"/>
+<rect x="651.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#85c2af" opacity="0.485"/>
+<rect x="667.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#203a34" stroke="#85c2af" stroke-width="0.55"/>
+<rect x="667.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#85c2af" opacity="0.155"/>
+<rect x="683.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#203a34" stroke="#85c2af" stroke-width="0.55"/>
+<rect x="683.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#85c2af" opacity="0.320"/>
+<rect x="699.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#203a34" stroke="#85c2af" stroke-width="0.55"/>
+<rect x="699.5" y="497.5" width="13.0" height="31.0" rx="1" fill="#85c2af" opacity="0.485"/>
+<path d="M579 493h-5v40h5 M721 493h5v40h-5" fill="none" stroke="#85c2af" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="815" y="451" width="180" height="110" rx="3" fill="#213447" stroke="#91b7d6" stroke-width="1.4"/>
+<text x="905.0" y="488" fill="#91b7d6" font-size="25" font-weight="400" text-anchor="middle" class="math">sᵢ = qᵀ dᵢ</text>
+<text x="905.0" y="521" fill="#91b7d6" font-size="16" font-weight="400" text-anchor="middle">内积排序 · Top-k</text>
+<g transform="translate(1100,468) scale(0.69)">
+<rect x="13" y="-12" width="124" height="162" rx="2" fill="#1e2a34" stroke="#33424d" stroke-width="1.3"/>
+<rect x="7" y="-6" width="124" height="162" rx="2" fill="#17212b" stroke="#33424d" stroke-width="1.3"/>
+<rect x="0" y="0" width="124" height="162" rx="2" fill="#17212b" stroke="#a4b0ba" stroke-width="1.2"/>
+<rect x="12" y="12" width="57" height="5" rx="0" fill="#85c2af" stroke="#85c2af" stroke-width="0"/>
+<rect x="12" y="23" width="88" height="3" rx="0" fill="#33424d" stroke="#33424d" stroke-width="0"/>
+<rect x="12" y="37" width="100" height="65" rx="0" fill="#1e2a34" stroke="#33424d" stroke-width="0.7"/>
+<path d="M22 44V91H103" fill="none" stroke="#a4b0ba" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M23 80 39 74 55 78 72 64 87 59 103 49" fill="none" stroke="#85c2af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M23 86 39 83 55 83 72 77 87 73 103 66" fill="none" stroke="#568a7a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 115H55 M64 115H111" fill="none" stroke="#33424d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 124H55 M64 124H111" fill="none" stroke="#33424d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 133H55 M64 133H111" fill="none" stroke="#33424d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 142H55 M64 142H111" fill="none" stroke="#33424d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="1214" y="515" fill="#a4b0ba" font-size="22" font-weight="400" text-anchor="middle" class="math">{ }</text>
+<text x="1214" y="537" fill="#a4b0ba" font-size="12" font-weight="400" text-anchor="middle">JSON</text>
+<path d="M236 518H304" fill="none" stroke="#e2e8ee" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-ink)"/>
+<path d="M503 518H570" fill="none" stroke="#e2e8ee" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-ink)"/>
+<path d="M734 518H796" fill="none" stroke="#e2e8ee" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-ink)"/>
+<path d="M1003 518H1075" fill="none" stroke="#e2e8ee" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-ink)"/>
+<text x="130" y="610" fill="#e2e8ee" font-size="20" font-weight="600" text-anchor="middle">查询文本</text>
+<text x="130" y="634" fill="#a4b0ba" font-size="15" font-weight="400" text-anchor="middle">不添加教师提示词</text>
+<text x="405" y="610" fill="#e2e8ee" font-size="20" font-weight="600" text-anchor="middle">查询学生</text>
+<text x="405" y="634" fill="#a4b0ba" font-size="15" font-weight="400" text-anchor="middle">GPU BF16 / CPU FP32</text>
+<text x="650" y="610" fill="#e2e8ee" font-size="20" font-weight="600" text-anchor="middle">查询向量</text>
+<text x="650" y="634" fill="#85c2af" font-size="18" font-weight="400" text-anchor="middle" class="math">q = <tspan font-style="normal">normalize</tspan>(g<tspan baseline-shift="sub" font-size="70%">φ</tspan>(t))</text>
+<text x="905" y="610" fill="#e2e8ee" font-size="20" font-weight="600" text-anchor="middle">CPU 相似度检索</text>
+<text x="905" y="634" fill="#a4b0ba" font-size="15" font-weight="400" text-anchor="middle">FAISS IndexFlatIP</text>
+<text x="1143" y="610" fill="#e2e8ee" font-size="20" font-weight="600" text-anchor="middle">排序后的页面</text>
+<text x="1143" y="634" fill="#a4b0ba" font-size="14" font-weight="400" text-anchor="middle">文档来源 · 物理页码</text>
+<path d="M24 652H1256" fill="none" stroke="#33424d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="24" y="677" fill="#a4b0ba" font-size="16" font-weight="400" text-anchor="start">dᵢ, q：2048 维单位向量</text>
+<text x="439" y="677" fill="#a4b0ba" font-size="15" font-weight="400" text-anchor="start">启动时校验教师与索引身份</text>
+<text x="1256" y="677" fill="#a4b0ba" font-size="14" font-weight="400" text-anchor="end">页面布局与向量均为示意</text>
+</svg>

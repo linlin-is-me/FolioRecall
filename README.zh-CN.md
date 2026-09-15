@@ -34,12 +34,12 @@ FolioRecall 分离离线页面编码和在线查询编码：多模态教师建�
 ## 架构
 
 <p align="center">
-  <a href="doc/assets/architecture-light.svg">
+  <a href="doc/assets/architecture-zh-CN-light.svg">
     <picture>
-      <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="doc/assets/architecture-mobile-dark.svg">
-      <source media="(max-width: 640px)" srcset="doc/assets/architecture-mobile-light.svg">
-      <source media="(prefers-color-scheme: dark)" srcset="doc/assets/architecture-dark.svg">
-      <img src="doc/assets/architecture-light.svg" width="1040" alt="离线导入页面，使用 Qwen3-VL 编码并保存 FAISS 索引与元数据，预览文件独立保存。在线使用 NanoVDR ML 编码查询，CPU FAISS 排序页面，CLI 或 Gradio 返回来源、物理页码和 JSON；Gradio 另行读取预览。">
+      <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="doc/assets/architecture-zh-CN-mobile-dark.svg">
+      <source media="(max-width: 640px)" srcset="doc/assets/architecture-zh-CN-mobile-light.svg">
+      <source media="(prefers-color-scheme: dark)" srcset="doc/assets/architecture-zh-CN-dark.svg">
+      <img src="doc/assets/architecture-zh-CN-light.svg" width="1040" alt="离线导入页面，使用 Qwen3-VL 编码并保存 FAISS 索引与元数据，预览文件独立保存。在线使用 NanoVDR ML 编码查询，CPU FAISS 排序页面，CLI 或 Gradio 返回来源、物理页码和 JSON；Gradio 另行读取预览。">
     </picture>
   </a>
 </p>
