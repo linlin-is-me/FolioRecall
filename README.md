@@ -4,7 +4,7 @@ Efficient Visual Document Retrieval
 
 FolioRecall面向英文视觉文档检索。导入PDF或页面图像后，多模态教师离线编码页面；在线使用与教师对齐的轻量学生，返回文档来源、物理页码、分数和页面预览。支持LoRA检索训练、查询蒸馏、正式评测及本地常驻演示。
 
-当前为 **0.1.0rc2 本地预发布候选**。第四阶段核心验收完成，GitHub代码、标签及Release尚未公开上传。2026-09-15复核修订及针对性CPU验证已完成，当前本机候选位于 `outputs/stage4/release-v0.1.0rc2-post-audit`；9月14日候选保留为历史版本。下文固定版本下载命令供发布后使用，发布前可从本机候选复制同名资产。发布及后续状态以[开发计划第1节](doc/多模态文档检索项目开发计划.md#当前开发重点)为准。
+**源码及完整开发历史已公开，第四阶段本地核心验收完成。** 当前包版本为0.1.0rc2，版本标签和Release附件尚未发布。可以克隆源码安装；42页CPU示例包、LoRA750、第94步学生和实验附件仍待后续发布。本机候选保留在 `outputs/stage4/release-v0.1.0rc2-post-audit`，构建提交为25166ca，本轮不重打包。阶段状态以[开发计划第1节](doc/多模态文档检索项目开发计划.md#当前开发重点)为准。
 
 ## 实际使用
 
@@ -25,7 +25,26 @@ flowchart LR
 
 默认采用原始Qwen3-VL-Embedding-2B离线建库、公开NanoVDR ML学生GPU BF16查询；CPU FP32用于快速体验。未传 `--query-config` 的CLI保持教师查询行为。页面教师与索引身份校验先于模型加载，不能用维度相同代替空间兼容。
 
+## 从 Git 安装源码
+
+在Python 3.10、Ubuntu 22.04／WSL中执行。以下安装CPU依赖并检查命令入口；实际检索还需要匹配的页面索引。数据准备、BM25及GPU自有PDF流程见[使用说明](doc/首版使用与评测.md#外部获取与复现)。
+
+```bash
+git clone https://github.com/linlin-is-me/FolioRecall.git
+cd FolioRecall
+python3.10 -m venv .venv-cpu
+source .venv-cpu/bin/activate
+python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+python -m pip install '.[demo,eval]'
+python -m pip check
+CUDA_VISIBLE_DEVICES= python -m foliorecall --help
+```
+
+原始教师和公开EN／ML学生从固定上游revision获取。自有PDF需要GPU教师建库，随后同一原始教师索引可使用GPU或CPU学生查询；这些路径不依赖本项目待发布的模型附件。
+
 ## CPU快速开始
+
+**42页示例体验待Release附件开放。** 以下下载命令当前不可用；已经取得本地候选的用户可复制同名文件后跳过下载。上面的Git源码安装无需这些附件。
 
 已验证Python 3.10、Ubuntu 22.04／WSL。CPU体验不需要教师权重、CUDA、torchvision或训练组件。以下命令在同一个Bash终端执行；首次需要联网下载学生，之后可设置 `HF_HUB_OFFLINE=1`。
 
