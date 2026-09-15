@@ -1,72 +1,221 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="440" height="1376" viewBox="0 0 440 1376" role="img" aria-labelledby="title description">
-<title id="title">FolioRecall page retrieval architecture</title>
-<desc id="description">Offline: import PDF or page images, encode them with Qwen3-VL and save a page index with metadata. Previews stay in separate files. Online: encode an English query with NanoVDR ML, search the saved index using CPU FAISS and return ranked pages and JSON. Gradio reads preview files for display. Check teacher and index identity before loading the query model.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="460" height="1540" viewBox="0 0 460 1540" role="img" aria-labelledby="title description">
+<title id="title">FolioRecall: offline page indexing and online query retrieval</title>
+<desc id="description">Paper-style system overview. Offline, Qwen3-VL-Embedding-2B encodes document pages into normalized 2048-dimensional vectors saved in a FAISS index. Online, the public NanoVDR ML student encodes raw English queries into the compatible space; CPU inner-product search returns ranked pages and JSON. Preview files are separate from the index. Page drawings and vector cells are schematic, not measured examples. Teacher and index identity are checked at startup.</desc>
 <defs>
-<pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.7" fill="#e7edf4"/></pattern>
-<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 1 8 5 0 9" fill="none" stroke="#8090a3" stroke-width="1.5"/></marker>
-<style>text{font-family:Inter,"Segoe UI",Arial,sans-serif} .wire{fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round} .icon{fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}</style>
+<style>text{font-family:Arial,"Segoe UI",sans-serif} .math{font-family:"Cambria Math",Cambria,"Times New Roman",serif;font-style:italic} .edge{fill:none;stroke-width:1.7;stroke-linejoin:round;stroke-linecap:round}</style>
+<marker id="a-ink" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 4 0 8z" fill="#26323b"/></marker>
+<marker id="a-purple" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 4 0 8z" fill="#75619c"/></marker>
+<marker id="a-teal" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 4 0 8z" fill="#378477"/></marker>
+<marker id="a-blue" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 4 0 8z" fill="#4a779d"/></marker>
+<marker id="a-muted" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 4 0 8z" fill="#64717a"/></marker>
 </defs>
-<rect width="440" height="1376" rx="24" fill="#f8fafc"/>
-<rect width="440" height="1376" rx="24" fill="url(#dots)"/>
-<text x="24" y="40" font-size="13" fill="#546579" font-weight="700" letter-spacing="2">FOLIORECALL</text>
-<text x="24" y="78" font-size="25" fill="#17263c" font-weight="650">Page retrieval architecture</text>
-<text x="24" y="106" font-size="16" fill="#546579" font-weight="400">Original teacher + public ML student</text>
-<rect x="16" y="136" width="408" height="540" rx="16" fill="#ffffff" stroke="#dce3ed"/>
-<rect x="34" y="158" width="28" height="28" rx="9" fill="#f2effb" stroke="#f2effb"/>
-<text x="40" y="177" font-size="12" fill="#6954bb" font-weight="700">01</text>
-<text x="74" y="178" font-size="14" fill="#6954bb" font-weight="700" letter-spacing="1.2">OFFLINE · BUILD THE INDEX</text>
-<rect x="34" y="210" width="372" height="96" rx="16" fill="#ffffff" stroke="#dce3ed"/>
-<rect x="50" y="230" width="46" height="46" rx="12" fill="#f2effb" stroke="#f2effb"/>
-<g class="icon" transform="translate(57,237)" stroke="#6954bb"><path d="M7 3h12l6 6v23H7z M19 3v7h6 M12 16h8 M12 22h8 M12 27h5"/></g>
-<text x="112" y="241" font-size="21" fill="#17263c" font-weight="600">Document import</text>
-<text x="112" y="267" font-size="15" fill="#546579" font-weight="400">PDF / images → pages</text>
-<text x="112" y="290" font-size="15" fill="#546579" font-weight="400">Save metadata + preview files</text>
-<rect x="34" y="348" width="372" height="96" rx="16" fill="#ffffff" stroke="#dce3ed"/>
-<rect x="50" y="368" width="46" height="46" rx="12" fill="#f2effb" stroke="#f2effb"/>
-<g class="icon" transform="translate(57,375)" stroke="#6954bb"><rect x="7" y="7" width="20" height="20" rx="4"/><path d="M13 13h8v8h-8z M12 2v5 M22 2v5 M12 27v5 M22 27v5 M2 12h5 M2 22h5 M27 12h5 M27 22h5"/></g>
-<text x="112" y="379" font-size="21" fill="#17263c" font-weight="600">Page teacher</text>
-<text x="112" y="405" font-size="15" fill="#546579" font-weight="400">Qwen3-VL-Embedding-2B</text>
-<text x="112" y="428" font-size="15" fill="#546579" font-weight="400">GPU BF16 · 2048-D vectors</text>
-<rect x="34" y="486" width="372" height="96" rx="16" fill="#ffffff" stroke="#dce3ed"/>
-<rect x="50" y="506" width="46" height="46" rx="12" fill="#edf3fa" stroke="#edf3fa"/>
-<g class="icon" transform="translate(57,513)" stroke="#3e6b9b"><ellipse cx="17" cy="7" rx="12" ry="5"/><path d="M5 7v19c0 7 24 7 24 0V7 M5 16c0 7 24 7 24 0"/></g>
-<text x="112" y="517" font-size="21" fill="#17263c" font-weight="600">Page index</text>
-<text x="112" y="543" font-size="15" fill="#546579" font-weight="400">FAISS vectors + metadata</text>
-<text x="112" y="566" font-size="15" fill="#546579" font-weight="400">Saved with encoder identity</text>
-<path class="wire" d="M220 307 V344" stroke="#8090a3" marker-end="url(#arrow)"/>
-<path class="wire" d="M220 445 V482" stroke="#8090a3" marker-end="url(#arrow)"/>
-<text x="36" y="620" font-size="17" fill="#546579" font-weight="500">Preview files stay separate.</text>
-<text x="36" y="646" font-size="16" fill="#546579" font-weight="400">Metadata stores their paths.</text>
-<rect x="16" y="710" width="408" height="606" rx="16" fill="#ffffff" stroke="#dce3ed"/>
-<rect x="34" y="732" width="28" height="28" rx="9" fill="#eaf7f5" stroke="#eaf7f5"/>
-<text x="40" y="751" font-size="12" fill="#177e7e" font-weight="700">02</text>
-<text x="74" y="752" font-size="14" fill="#177e7e" font-weight="700" letter-spacing="1.2">ONLINE · QUERY THE INDEX</text>
-<text x="34" y="786" font-size="15" fill="#546579" font-weight="400">At startup: check teacher / index identity.</text>
-<rect x="34" y="810" width="372" height="76" rx="16" fill="#ffffff" stroke="#dce3ed"/>
-<rect x="50" y="830" width="46" height="46" rx="12" fill="#eaf7f5" stroke="#eaf7f5"/>
-<g class="icon" transform="translate(57,837)" stroke="#177e7e"><path d="M4 4h26v21H16l-8 7v-7H4z M10 11h14 M10 17h9"/></g>
-<text x="112" y="841" font-size="21" fill="#17263c" font-weight="600">English query</text>
-<text x="112" y="867" font-size="15" fill="#546579" font-weight="400">Raw text · no teacher prompt</text>
-<rect x="34" y="924" width="372" height="96" rx="16" fill="#ffffff" stroke="#dce3ed"/>
-<rect x="50" y="944" width="46" height="46" rx="12" fill="#eaf7f5" stroke="#eaf7f5"/>
-<g class="icon" transform="translate(57,951)" stroke="#177e7e"><rect x="7" y="7" width="20" height="20" rx="4"/><path d="M13 13h8v8h-8z M12 2v5 M22 2v5 M12 27v5 M22 27v5 M2 12h5 M2 22h5 M27 12h5 M27 22h5"/></g>
-<text x="112" y="955" font-size="21" fill="#17263c" font-weight="600">Query student</text>
-<text x="112" y="981" font-size="15" fill="#546579" font-weight="400">NanoVDR ML · GPU BF16</text>
-<text x="112" y="1004" font-size="15" fill="#546579" font-weight="400">CPU FP32 also supported</text>
-<rect x="34" y="1058" width="372" height="96" rx="16" fill="#ffffff" stroke="#dce3ed"/>
-<rect x="50" y="1078" width="46" height="46" rx="12" fill="#eaf7f5" stroke="#eaf7f5"/>
-<g class="icon" transform="translate(57,1085)" stroke="#177e7e"><circle cx="14" cy="14" r="10"/><path d="m22 22 10 10 M10 14h8 M14 10v8"/></g>
-<text x="112" y="1089" font-size="21" fill="#17263c" font-weight="600">Similarity search</text>
-<text x="112" y="1115" font-size="15" fill="#546579" font-weight="400">FAISS IndexFlatIP · CPU</text>
-<text x="112" y="1138" font-size="15" fill="#546579" font-weight="400">Uses the saved page index</text>
-<rect x="34" y="1192" width="372" height="96" rx="16" fill="#ffffff" stroke="#dce3ed"/>
-<rect x="50" y="1212" width="46" height="46" rx="12" fill="#eaf7f5" stroke="#eaf7f5"/>
-<g class="icon" transform="translate(57,1219)" stroke="#177e7e"><rect x="3" y="4" width="28" height="26" rx="4"/><path d="M3 12h28 M12 12v18 M18 19h8 M18 24h6"/></g>
-<text x="112" y="1223" font-size="21" fill="#17263c" font-weight="600">Ranked pages</text>
-<text x="112" y="1249" font-size="15" fill="#546579" font-weight="400">Sources · page numbers · JSON</text>
-<text x="112" y="1272" font-size="15" fill="#546579" font-weight="400">Gradio reads preview files</text>
-<path class="wire" d="M220 887 V920" stroke="#8090a3" marker-end="url(#arrow)"/>
-<path class="wire" d="M220 1021 V1054" stroke="#8090a3" marker-end="url(#arrow)"/>
-<path class="wire" d="M220 1155 V1188" stroke="#8090a3" marker-end="url(#arrow)"/>
-<text x="34" y="1354" font-size="16" fill="#546579" font-weight="400">CLI + Gradio share retrieve()</text>
+<rect width="460" height="1540" fill="#ffffff"/>
+<text x="20" y="32" fill="#26323b" font-size="22" font-weight="700" text-anchor="start">(a)</text>
+<text x="59" y="32" fill="#26323b" font-size="20" font-weight="600" text-anchor="start">Offline page indexing</text>
+<path d="M20 47H440" fill="none" stroke="#dbe2e6" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<g transform="translate(67,83) scale(0.69)">
+<rect x="13" y="-12" width="124" height="162" rx="2" fill="#f3f5f6" stroke="#dbe2e6" stroke-width="1.3"/>
+<rect x="7" y="-6" width="124" height="162" rx="2" fill="#ffffff" stroke="#dbe2e6" stroke-width="1.3"/>
+<rect x="0" y="0" width="124" height="162" rx="2" fill="#ffffff" stroke="#64717a" stroke-width="1.2"/>
+<rect x="12" y="12" width="57" height="5" rx="0" fill="#4a779d" stroke="#4a779d" stroke-width="0"/>
+<rect x="12" y="23" width="88" height="3" rx="0" fill="#dbe2e6" stroke="#dbe2e6" stroke-width="0"/>
+<rect x="12" y="37" width="100" height="65" rx="0" fill="#f3f5f6" stroke="#dbe2e6" stroke-width="0.7"/>
+<path d="M22 44V91H103" fill="none" stroke="#64717a" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M23 80 39 74 55 78 72 64 87 59 103 49" fill="none" stroke="#4a779d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M23 86 39 83 55 83 72 77 87 73 103 66" fill="none" stroke="#b7a6d0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 115H55 M64 115H111" fill="none" stroke="#dbe2e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 124H55 M64 124H111" fill="none" stroke="#dbe2e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 133H55 M64 133H111" fill="none" stroke="#dbe2e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 142H55 M64 142H111" fill="none" stroke="#dbe2e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="222" y="115" fill="#26323b" font-size="19" font-weight="600" text-anchor="start">Document pages</text>
+<text x="222" y="141" fill="#64717a" font-size="15" font-weight="400" text-anchor="start">PDFs / page images</text>
+<text x="222" y="166" fill="#64717a" font-size="15" font-weight="400" text-anchor="start">Save previews separately</text>
+<path d="M109 204V237" fill="none" stroke="#26323b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-ink)"/>
+<rect x="51" y="248" width="140" height="81" rx="3" fill="#eee9f6" stroke="#75619c" stroke-width="0.9"/>
+<rect x="45" y="254" width="140" height="81" rx="3" fill="#eee9f6" stroke="#75619c" stroke-width="0.9"/>
+<rect x="39" y="260" width="140" height="81" rx="3" fill="#eee9f6" stroke="#75619c" stroke-width="1.5"/>
+<text x="109.0" y="294.83" fill="#75619c" font-size="30" font-weight="400" text-anchor="middle" class="math">f<tspan baseline-shift="sub" font-size="70%">θ</tspan></text>
+<text x="109.0" y="326.42" fill="#75619c" font-size="17" font-weight="600" text-anchor="middle">Qwen3-VL</text>
+<text x="222" y="273" fill="#26323b" font-size="19" font-weight="600" text-anchor="start">Page teacher</text>
+<text x="222" y="299" fill="#64717a" font-size="14" font-weight="400" text-anchor="start">Qwen3-VL-Embedding-2B</text>
+<text x="222" y="325" fill="#64717a" font-size="15" font-weight="400" text-anchor="start">GPU BF16</text>
+<path d="M109 351V385" fill="none" stroke="#26323b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-ink)"/>
+<rect x="54.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="54.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.320"/>
+<rect x="68.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="68.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.485"/>
+<rect x="82.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="82.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.155"/>
+<rect x="96.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="96.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.320"/>
+<rect x="110.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="110.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.485"/>
+<rect x="124.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="124.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.155"/>
+<rect x="138.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="138.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.320"/>
+<rect x="152.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="152.5" y="398.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.485"/>
+<rect x="54.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="54.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.210"/>
+<rect x="68.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="68.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.375"/>
+<rect x="82.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="82.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.540"/>
+<rect x="96.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="96.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.210"/>
+<rect x="110.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="110.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.375"/>
+<rect x="124.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="124.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.540"/>
+<rect x="138.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="138.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.210"/>
+<rect x="152.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="152.5" y="414.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.375"/>
+<rect x="54.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="54.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.100"/>
+<rect x="68.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="68.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.265"/>
+<rect x="82.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="82.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.430"/>
+<rect x="96.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="96.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.100"/>
+<rect x="110.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="110.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.265"/>
+<rect x="124.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="124.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.430"/>
+<rect x="138.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="138.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.100"/>
+<rect x="152.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="152.5" y="429.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.265"/>
+<rect x="54.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="54.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.485"/>
+<rect x="68.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="68.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.155"/>
+<rect x="82.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="82.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.320"/>
+<rect x="96.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="96.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.485"/>
+<rect x="110.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="110.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.155"/>
+<rect x="124.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="124.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.320"/>
+<rect x="138.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="138.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.485"/>
+<rect x="152.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="152.5" y="445.5" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.155"/>
+<rect x="54.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="54.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.375"/>
+<rect x="68.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="68.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.540"/>
+<rect x="82.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="82.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.210"/>
+<rect x="96.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="96.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.375"/>
+<rect x="110.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="110.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.540"/>
+<rect x="124.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="124.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.210"/>
+<rect x="138.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="138.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.375"/>
+<rect x="152.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="152.5" y="461.1666666666667" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.540"/>
+<rect x="54.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="54.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.265"/>
+<rect x="68.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="68.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.430"/>
+<rect x="82.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="82.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.100"/>
+<rect x="96.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="96.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.265"/>
+<rect x="110.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="110.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.430"/>
+<rect x="124.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="124.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.100"/>
+<rect x="138.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="138.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.265"/>
+<rect x="152.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#eee9f6" stroke="#75619c" stroke-width="0.55"/>
+<rect x="152.5" y="476.8333333333333" width="11.0" height="12.666666666666666" rx="1" fill="#75619c" opacity="0.430"/>
+<path d="M46 394h-5v100h5 M172 394h5v100h-5" fill="none" stroke="#75619c" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="222" y="430" fill="#26323b" font-size="19" font-weight="600" text-anchor="start">Page vectors</text>
+<text x="222" y="459" fill="#75619c" font-size="18" font-weight="400" text-anchor="start" class="math">dᵢ = <tspan font-style="normal">normalize</tspan>(f<tspan baseline-shift="sub" font-size="70%">θ</tspan>(Iᵢ))</text>
+<path d="M109 501V530" fill="none" stroke="#26323b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-ink)"/>
+<path d="M38 556 C38 536,180 536,180 556 V630 C180 650,38 650,38 630Z" fill="#e9f1f7" stroke="#4a779d" stroke-width="1.4"/>
+<path d="M38 556 C38 576,180 576,180 556" fill="none" stroke="#4a779d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="109.0" y="598" fill="#4a779d" font-size="19" font-weight="600" text-anchor="middle">Page index</text>
+<text x="109.0" y="623" fill="#4a779d" font-size="14" font-weight="400" text-anchor="middle">vectors + page IDs</text>
+<text x="222" y="568" fill="#26323b" font-size="18" font-weight="600" text-anchor="start">Saved FAISS index</text>
+<text x="222" y="594" fill="#64717a" font-size="15" font-weight="400" text-anchor="start">Metadata + encoder</text>
+<text x="222" y="616" fill="#64717a" font-size="15" font-weight="400" text-anchor="start">identity</text>
+<text x="20" y="694" fill="#26323b" font-size="22" font-weight="700" text-anchor="start">(b)</text>
+<text x="59" y="694" fill="#26323b" font-size="20" font-weight="600" text-anchor="start">Online query retrieval</text>
+<path d="M20 709H440" fill="none" stroke="#dbe2e6" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="37" y="749" width="153" height="75" rx="3" fill="#f3f5f6" stroke="#dbe2e6" stroke-width="1.3"/>
+<text x="52" y="781" fill="#26323b" font-size="19" font-weight="600" text-anchor="start">English query</text>
+<text x="52" y="807" fill="#64717a" font-size="16" font-weight="400" text-anchor="start">raw text</text>
+<text x="168" y="808" fill="#378477" font-size="23" font-weight="400" text-anchor="end" class="math">t</text>
+<text x="222" y="774" fill="#26323b" font-size="18" font-weight="600" text-anchor="start">Raw English text</text>
+<text x="222" y="800" fill="#64717a" font-size="15" font-weight="400" text-anchor="start">No teacher prompt</text>
+<path d="M109 834V868" fill="none" stroke="#26323b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-ink)"/>
+<rect x="64" y="878" width="121" height="73" rx="3" fill="#e7f2ed" stroke="#378477" stroke-width="0.9"/>
+<rect x="58" y="884" width="121" height="73" rx="3" fill="#e7f2ed" stroke="#378477" stroke-width="0.9"/>
+<rect x="52" y="890" width="121" height="73" rx="3" fill="#e7f2ed" stroke="#378477" stroke-width="1.5"/>
+<text x="112.5" y="917.74" fill="#378477" font-size="27" font-weight="400" text-anchor="middle" class="math">g<tspan baseline-shift="sub" font-size="70%">φ</tspan></text>
+<text x="112.5" y="949.86" fill="#378477" font-size="17" font-weight="600" text-anchor="middle">NanoVDR ML</text>
+<text x="222" y="905" fill="#26323b" font-size="18" font-weight="600" text-anchor="start">Public ML student</text>
+<text x="222" y="931" fill="#64717a" font-size="15" font-weight="400" text-anchor="start">GPU BF16 / CPU FP32</text>
+<path d="M109 973V1006" fill="none" stroke="#26323b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-ink)"/>
+<rect x="54.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#e7f2ed" stroke="#378477" stroke-width="0.55"/>
+<rect x="54.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#378477" opacity="0.320"/>
+<rect x="68.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#e7f2ed" stroke="#378477" stroke-width="0.55"/>
+<rect x="68.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#378477" opacity="0.485"/>
+<rect x="82.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#e7f2ed" stroke="#378477" stroke-width="0.55"/>
+<rect x="82.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#378477" opacity="0.155"/>
+<rect x="96.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#e7f2ed" stroke="#378477" stroke-width="0.55"/>
+<rect x="96.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#378477" opacity="0.320"/>
+<rect x="110.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#e7f2ed" stroke="#378477" stroke-width="0.55"/>
+<rect x="110.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#378477" opacity="0.485"/>
+<rect x="124.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#e7f2ed" stroke="#378477" stroke-width="0.55"/>
+<rect x="124.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#378477" opacity="0.155"/>
+<rect x="138.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#e7f2ed" stroke="#378477" stroke-width="0.55"/>
+<rect x="138.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#378477" opacity="0.320"/>
+<rect x="152.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#e7f2ed" stroke="#378477" stroke-width="0.55"/>
+<rect x="152.5" y="1019.5" width="11.0" height="26.0" rx="1" fill="#378477" opacity="0.485"/>
+<path d="M46 1015h-5v35h5 M172 1015h5v35h-5" fill="none" stroke="#378477" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="222" y="1027" fill="#26323b" font-size="19" font-weight="600" text-anchor="start">Query vector</text>
+<text x="222" y="1055" fill="#378477" font-size="18" font-weight="400" text-anchor="start" class="math">q = <tspan font-style="normal">normalize</tspan>(g<tspan baseline-shift="sub" font-size="70%">φ</tspan>(t))</text>
+<path d="M109 1060V1104" fill="none" stroke="#26323b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-ink)"/>
+<rect x="33" y="1118" width="155" height="97" rx="3" fill="#e9f1f7" stroke="#4a779d" stroke-width="1.4"/>
+<text x="110.5" y="1155" fill="#4a779d" font-size="25" font-weight="400" text-anchor="middle" class="math">sᵢ = qᵀ dᵢ</text>
+<text x="110.5" y="1188" fill="#4a779d" font-size="16" font-weight="400" text-anchor="middle">Top-k inner product</text>
+<text x="222" y="1149" fill="#26323b" font-size="19" font-weight="600" text-anchor="start">CPU search</text>
+<text x="222" y="1175" fill="#64717a" font-size="15" font-weight="400" text-anchor="start">FAISS IndexFlatIP</text>
+<text x="222" y="1199" fill="#4a779d" font-size="15" font-weight="400" text-anchor="start">Reuses page index</text>
+<path d="M38 596H12V1164H30" fill="none" stroke="#4a779d" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-blue)"/>
+<path d="M109 1225V1260" fill="none" stroke="#26323b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-ink)"/>
+<g transform="translate(67,1277) scale(0.68)">
+<rect x="13" y="-12" width="124" height="162" rx="2" fill="#f3f5f6" stroke="#dbe2e6" stroke-width="1.3"/>
+<rect x="7" y="-6" width="124" height="162" rx="2" fill="#ffffff" stroke="#dbe2e6" stroke-width="1.3"/>
+<rect x="0" y="0" width="124" height="162" rx="2" fill="#ffffff" stroke="#64717a" stroke-width="1.2"/>
+<rect x="12" y="12" width="57" height="5" rx="0" fill="#378477" stroke="#378477" stroke-width="0"/>
+<rect x="12" y="23" width="88" height="3" rx="0" fill="#dbe2e6" stroke="#dbe2e6" stroke-width="0"/>
+<rect x="12" y="37" width="100" height="65" rx="0" fill="#f3f5f6" stroke="#dbe2e6" stroke-width="0.7"/>
+<path d="M22 44V91H103" fill="none" stroke="#64717a" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M23 80 39 74 55 78 72 64 87 59 103 49" fill="none" stroke="#378477" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M23 86 39 83 55 83 72 77 87 73 103 66" fill="none" stroke="#91bdb0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 115H55 M64 115H111" fill="none" stroke="#dbe2e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 124H55 M64 124H111" fill="none" stroke="#dbe2e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 133H55 M64 133H111" fill="none" stroke="#dbe2e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M12 142H55 M64 142H111" fill="none" stroke="#dbe2e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="222" y="1299" fill="#26323b" font-size="19" font-weight="600" text-anchor="start">Ranked pages</text>
+<text x="222" y="1325" fill="#64717a" font-size="14" font-weight="400" text-anchor="start">Sources · physical page no.</text>
+<text x="222" y="1351" fill="#64717a" font-size="15" font-weight="400" text-anchor="start">Preview files + JSON</text>
+<text x="222" y="1377" fill="#64717a" font-size="14" font-weight="400" text-anchor="start">Previews read for display</text>
+<path d="M20 1411H440" fill="none" stroke="#dbe2e6" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="20" y="1440" fill="#64717a" font-size="16" font-weight="400" text-anchor="start">dᵢ, q: 2048-D unit vectors</text>
+<text x="20" y="1468" fill="#64717a" font-size="15" font-weight="400" text-anchor="start">Startup: validate teacher / index identity</text>
+<text x="20" y="1496" fill="#64717a" font-size="14" font-weight="400" text-anchor="start">Page layouts and vector cells are schematic.</text>
+<text x="20" y="1520" fill="#64717a" font-size="14" font-weight="400" text-anchor="start">Solid blue edge: reuse the saved page index.</text>
 </svg>
