@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="1376" viewBox="0 0 440 1376" role="img" aria-labelledby="title description">
+<title id="title">FolioRecall page retrieval architecture</title>
+<desc id="description">Offline: import PDF or page images, encode them with Qwen3-VL and save a page index with metadata. Previews stay in separate files. Online: encode an English query with NanoVDR ML, search the saved index using CPU FAISS and return ranked pages and JSON. Gradio reads preview files for display. Check teacher and index identity before loading the query model.</desc>
+<defs>
+<pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.7" fill="#233142"/></pattern>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 1 8 5 0 9" fill="none" stroke="#8096ae" stroke-width="1.5"/></marker>
+<style>text{font-family:Inter,"Segoe UI",Arial,sans-serif} .wire{fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round} .icon{fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}</style>
+</defs>
+<rect width="440" height="1376" rx="24" fill="#101923"/>
+<rect width="440" height="1376" rx="24" fill="url(#dots)"/>
+<text x="24" y="40" font-size="13" fill="#a3b3c5" font-weight="700" letter-spacing="2">FOLIORECALL</text>
+<text x="24" y="78" font-size="25" fill="#edf3fa" font-weight="650">Page retrieval architecture</text>
+<text x="24" y="106" font-size="16" fill="#a3b3c5" font-weight="400">Original teacher + public ML student</text>
+<rect x="16" y="136" width="408" height="540" rx="16" fill="#172330" stroke="#2e4155"/>
+<rect x="34" y="158" width="28" height="28" rx="9" fill="#26243d" stroke="#26243d"/>
+<text x="40" y="177" font-size="12" fill="#b1a0f1" font-weight="700">01</text>
+<text x="74" y="178" font-size="14" fill="#b1a0f1" font-weight="700" letter-spacing="1.2">OFFLINE · BUILD THE INDEX</text>
+<rect x="34" y="210" width="372" height="96" rx="16" fill="#172330" stroke="#2e4155"/>
+<rect x="50" y="230" width="46" height="46" rx="12" fill="#26243d" stroke="#26243d"/>
+<g class="icon" transform="translate(57,237)" stroke="#b1a0f1"><path d="M7 3h12l6 6v23H7z M19 3v7h6 M12 16h8 M12 22h8 M12 27h5"/></g>
+<text x="112" y="241" font-size="21" fill="#edf3fa" font-weight="600">Document import</text>
+<text x="112" y="267" font-size="15" fill="#a3b3c5" font-weight="400">PDF / images → pages</text>
+<text x="112" y="290" font-size="15" fill="#a3b3c5" font-weight="400">Save metadata + preview files</text>
+<rect x="34" y="348" width="372" height="96" rx="16" fill="#172330" stroke="#2e4155"/>
+<rect x="50" y="368" width="46" height="46" rx="12" fill="#26243d" stroke="#26243d"/>
+<g class="icon" transform="translate(57,375)" stroke="#b1a0f1"><rect x="7" y="7" width="20" height="20" rx="4"/><path d="M13 13h8v8h-8z M12 2v5 M22 2v5 M12 27v5 M22 27v5 M2 12h5 M2 22h5 M27 12h5 M27 22h5"/></g>
+<text x="112" y="379" font-size="21" fill="#edf3fa" font-weight="600">Page teacher</text>
+<text x="112" y="405" font-size="15" fill="#a3b3c5" font-weight="400">Qwen3-VL-Embedding-2B</text>
+<text x="112" y="428" font-size="15" fill="#a3b3c5" font-weight="400">GPU BF16 · 2048-D vectors</text>
+<rect x="34" y="486" width="372" height="96" rx="16" fill="#172330" stroke="#2e4155"/>
+<rect x="50" y="506" width="46" height="46" rx="12" fill="#1d3046" stroke="#1d3046"/>
+<g class="icon" transform="translate(57,513)" stroke="#88b7e9"><ellipse cx="17" cy="7" rx="12" ry="5"/><path d="M5 7v19c0 7 24 7 24 0V7 M5 16c0 7 24 7 24 0"/></g>
+<text x="112" y="517" font-size="21" fill="#edf3fa" font-weight="600">Page index</text>
+<text x="112" y="543" font-size="15" fill="#a3b3c5" font-weight="400">FAISS vectors + metadata</text>
+<text x="112" y="566" font-size="15" fill="#a3b3c5" font-weight="400">Saved with encoder identity</text>
+<path class="wire" d="M220 307 V344" stroke="#8096ae" marker-end="url(#arrow)"/>
+<path class="wire" d="M220 445 V482" stroke="#8096ae" marker-end="url(#arrow)"/>
+<text x="36" y="620" font-size="17" fill="#a3b3c5" font-weight="500">Preview files stay separate.</text>
+<text x="36" y="646" font-size="16" fill="#a3b3c5" font-weight="400">Metadata stores their paths.</text>
+<rect x="16" y="710" width="408" height="606" rx="16" fill="#172330" stroke="#2e4155"/>
+<rect x="34" y="732" width="28" height="28" rx="9" fill="#173432" stroke="#173432"/>
+<text x="40" y="751" font-size="12" fill="#65c9bd" font-weight="700">02</text>
+<text x="74" y="752" font-size="14" fill="#65c9bd" font-weight="700" letter-spacing="1.2">ONLINE · QUERY THE INDEX</text>
+<text x="34" y="786" font-size="15" fill="#a3b3c5" font-weight="400">At startup: check teacher / index identity.</text>
+<rect x="34" y="810" width="372" height="76" rx="16" fill="#172330" stroke="#2e4155"/>
+<rect x="50" y="830" width="46" height="46" rx="12" fill="#173432" stroke="#173432"/>
+<g class="icon" transform="translate(57,837)" stroke="#65c9bd"><path d="M4 4h26v21H16l-8 7v-7H4z M10 11h14 M10 17h9"/></g>
+<text x="112" y="841" font-size="21" fill="#edf3fa" font-weight="600">English query</text>
+<text x="112" y="867" font-size="15" fill="#a3b3c5" font-weight="400">Raw text · no teacher prompt</text>
+<rect x="34" y="924" width="372" height="96" rx="16" fill="#172330" stroke="#2e4155"/>
+<rect x="50" y="944" width="46" height="46" rx="12" fill="#173432" stroke="#173432"/>
+<g class="icon" transform="translate(57,951)" stroke="#65c9bd"><rect x="7" y="7" width="20" height="20" rx="4"/><path d="M13 13h8v8h-8z M12 2v5 M22 2v5 M12 27v5 M22 27v5 M2 12h5 M2 22h5 M27 12h5 M27 22h5"/></g>
+<text x="112" y="955" font-size="21" fill="#edf3fa" font-weight="600">Query student</text>
+<text x="112" y="981" font-size="15" fill="#a3b3c5" font-weight="400">NanoVDR ML · GPU BF16</text>
+<text x="112" y="1004" font-size="15" fill="#a3b3c5" font-weight="400">CPU FP32 also supported</text>
+<rect x="34" y="1058" width="372" height="96" rx="16" fill="#172330" stroke="#2e4155"/>
+<rect x="50" y="1078" width="46" height="46" rx="12" fill="#173432" stroke="#173432"/>
+<g class="icon" transform="translate(57,1085)" stroke="#65c9bd"><circle cx="14" cy="14" r="10"/><path d="m22 22 10 10 M10 14h8 M14 10v8"/></g>
+<text x="112" y="1089" font-size="21" fill="#edf3fa" font-weight="600">Similarity search</text>
+<text x="112" y="1115" font-size="15" fill="#a3b3c5" font-weight="400">FAISS IndexFlatIP · CPU</text>
+<text x="112" y="1138" font-size="15" fill="#a3b3c5" font-weight="400">Uses the saved page index</text>
+<rect x="34" y="1192" width="372" height="96" rx="16" fill="#172330" stroke="#2e4155"/>
+<rect x="50" y="1212" width="46" height="46" rx="12" fill="#173432" stroke="#173432"/>
+<g class="icon" transform="translate(57,1219)" stroke="#65c9bd"><rect x="3" y="4" width="28" height="26" rx="4"/><path d="M3 12h28 M12 12v18 M18 19h8 M18 24h6"/></g>
+<text x="112" y="1223" font-size="21" fill="#edf3fa" font-weight="600">Ranked pages</text>
+<text x="112" y="1249" font-size="15" fill="#a3b3c5" font-weight="400">Sources · page numbers · JSON</text>
+<text x="112" y="1272" font-size="15" fill="#a3b3c5" font-weight="400">Gradio reads preview files</text>
+<path class="wire" d="M220 887 V920" stroke="#8096ae" marker-end="url(#arrow)"/>
+<path class="wire" d="M220 1021 V1054" stroke="#8096ae" marker-end="url(#arrow)"/>
+<path class="wire" d="M220 1155 V1188" stroke="#8096ae" marker-end="url(#arrow)"/>
+<text x="34" y="1354" font-size="16" fill="#a3b3c5" font-weight="400">CLI + Gradio share retrieve()</text>
+</svg>

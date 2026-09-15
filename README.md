@@ -33,16 +33,16 @@ The screenshot demonstrates an existing local example. Its downloadable bundle i
 
 ## Architecture
 
-```mermaid
-flowchart TB
-    P[PDF / page images] --> I[Import and previews]
-    I --> T[Offline page teacher]
-    T --> X[FAISS page index]
-    Q[English query] --> S[Online query student]
-    S --> R[Retrieve matching pages]
-    X --> R
-    R --> U[Sources, page numbers, previews, JSON]
-```
+<p align="center">
+  <a href="doc/assets/architecture-light.svg">
+    <picture>
+      <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="doc/assets/architecture-mobile-dark.svg">
+      <source media="(max-width: 640px)" srcset="doc/assets/architecture-mobile-light.svg">
+      <source media="(prefers-color-scheme: dark)" srcset="doc/assets/architecture-dark.svg">
+      <img src="doc/assets/architecture-light.svg" width="1040" alt="Offline: import pages, encode them with Qwen3-VL and save the FAISS index and metadata; previews remain separate. Online: NanoVDR ML encodes queries, CPU FAISS ranks pages, and CLI or Gradio returns sources, page numbers and JSON. Gradio reads preview files for display.">
+    </picture>
+  </a>
+</p>
 
 The default combination is **original Qwen3-VL-Embedding-2B for indexing + public NanoVDR ML for GPU BF16 queries**. CPU FP32 queries can reuse the same original-teacher index. LoRA requires its own matching page index; equal embedding dimensions alone do not establish compatibility. Omitting `--query-config` in the CLI retains teacher-based queries.
 

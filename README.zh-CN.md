@@ -33,16 +33,16 @@ FolioRecall 分离离线页面编码和在线查询编码：多模态教师建�
 
 ## 架构
 
-```mermaid
-flowchart TB
-    P[PDF / 页面图像] --> I[导入与预览]
-    I --> T[离线页面教师]
-    T --> X[FAISS 页面索引]
-    Q[英文查询] --> S[在线查询学生]
-    S --> R[检索相关页面]
-    X --> R
-    R --> U[来源、页码、预览、JSON]
-```
+<p align="center">
+  <a href="doc/assets/architecture-light.svg">
+    <picture>
+      <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="doc/assets/architecture-mobile-dark.svg">
+      <source media="(max-width: 640px)" srcset="doc/assets/architecture-mobile-light.svg">
+      <source media="(prefers-color-scheme: dark)" srcset="doc/assets/architecture-dark.svg">
+      <img src="doc/assets/architecture-light.svg" width="1040" alt="离线导入页面，使用 Qwen3-VL 编码并保存 FAISS 索引与元数据，预览文件独立保存。在线使用 NanoVDR ML 编码查询，CPU FAISS 排序页面，CLI 或 Gradio 返回来源、物理页码和 JSON；Gradio 另行读取预览。">
+    </picture>
+  </a>
+</p>
 
 默认采用**原始 Qwen3-VL-Embedding-2B 建库，公开 NanoVDR ML 执行 GPU BF16 查询**。CPU FP32 查询可复用同一原始教师索引。LoRA 需要自身的匹配页面索引，向量维度相同不足以证明兼容。CLI 不传 `--query-config` 时仍使用教师查询。
 
