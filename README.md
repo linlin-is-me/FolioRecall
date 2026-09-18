@@ -20,6 +20,7 @@ FolioRecall separates offline page encoding from online query encoding. A multim
 - **Independent query encoders:** load complete Qwen3-VL or NanoVDR packages, with teacher–index compatibility checks before model loading.
 - **Resumable indexing and local serving:** save page embeddings in chunks; share retrieval logic between the CLI and a persistent, single-model Gradio app.
 - **Training and evaluation:** run LoRA adaptation, query-vector distillation, BM25 and neural retrieval comparisons, with measured latency and resource use.
+- **Optional hybrid retrieval:** reuse a visual index with page-aligned BM25 and fixed RRF fusion; extract existing PDF text layers without OCR. See the [extension commands and retrospective CPU results (Chinese)](doc/首版使用与评测.md#扩展阶段-a混合检索与文档问答). Document QA is under development and has not passed live API acceptance.
 
 ## Demo
 

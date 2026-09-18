@@ -26,7 +26,8 @@ def select_tasks(data, config, output):
             raise ValueError('任务页面或查询数量不匹配')
         used = set()
         predicates = {
-            'numeric': lambda q: bool(re.search(r'\b(how many|how much|percentage|percent|rate|number|difference)\b', q['query'], re.I)),
+            'numeric': lambda q: bool(re.search(r'\b(how many|how much|percentage|percent|rate|number|difference)\b', q['query'], re.I)
+                                      and re.search(r'\d', str(q.get('answer',q.get('raw_answers',''))))),
             'chart': lambda q: 'Chart' in q.get('content_type', []),
             'multi_page': lambda q: len([v for v in qrels[str(q['query_id'])].values() if v > 0]) > 1,
             'single_page': lambda q: len([v for v in qrels[str(q['query_id'])].values() if v > 0]) == 1,

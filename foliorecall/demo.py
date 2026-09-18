@@ -43,7 +43,36 @@ def display_request(model, config, index, pages, text, top_k, downloads, log=Non
     return gallery, table, str(target), message
 
 
-def serve_demo(folder, teacher_config, query_config, port=7860, output=None, retrieval_config=None):
+def qa_display(result, pages):
+    import html
+    from urllib.parse import quote
+    from .agent import read_evidence
+    started = time.perf_counter()
+    mapping = {p['page_id']:p for p in pages}
+    escape = html.escape
+    chunks = ['<h3>回答与引用</h3>']
+    for claim in result['answer']['claims']:
+        links = []
+        for pid in claim['evidence_page_ids']:
+            page = mapping[pid]
+            links.append(f'<a href="#qa-page-{quote(pid,safe="")}">{escape(page.get("document_name",page["doc_id"]))} · {page["page_number"]}</a>')
+        chunks.append('<p>'+escape(claim['text'])+' '+'; '.join(links)+'</p>')
+    for text in result['answer']['unresolved']:
+        chunks.append('<p>'+escape(text)+'</p>')
+    for evidence in result['evidence']:
+        pid = evidence['page_id']
+        try:
+            image,_ = read_evidence(mapping[pid],1310720)
+            chunks.append(f'<figure id="qa-page-{quote(pid,safe="")}"><figcaption>{escape(evidence.get("document_name") or pid)} · 物理第 {evidence["page_number"]} 页</figcaption><img style="max-width:100%" src="{image["image_url"]["url"]}" alt="Evidence page"></figure>')
+        except (OSError,ValueError):
+            chunks.append('<p>证据预览暂不可读：'+escape(pid)+'</p>')
+    result['timing']['display_preparation_seconds'] = time.perf_counter()-started
+    result['timing']['task_and_display_seconds'] = result['timing']['task_seconds'] + result['timing']['display_preparation_seconds']
+    return '\n'.join(chunks)
+
+
+def serve_demo(folder, teacher_config, query_config, port=7860, output=None, retrieval_config=None,
+               agent_config_path=None, public_corpus=None):
     try:
         import gradio as gr
     except ImportError as exc:
@@ -52,6 +81,17 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
         raise ValueError('端口必须在 1–65535 之间')
     if output and Path(output).exists():
         raise ValueError('演示验证记录目录已存在，请使用新目录')
+    provider, agent_config, evidence_texts = None, None, None
+    if agent_config_path:
+        from .generation import read_agent_config, Bailian
+        from .agent import load_public_corpus
+        from .search import load_index
+        if not public_corpus:
+            raise ValueError('启用远程问答必须提供 --public-corpus 公开资料清单')
+        agent_config = read_agent_config(agent_config_path)
+        _, corpus_pages = load_index(folder, teacher_config)
+        evidence_texts = load_public_corpus(public_corpus, corpus_pages)
+        provider = Bailian(agent_config)
     started = time.perf_counter()
     model, index, pages, retrieval = load_search_session(folder, teacher_config, query_config,
                                                         retrieval_config=retrieval_config)
@@ -72,23 +112,43 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
         if retrieval:
             gr.Markdown('混合检索：视觉与 BM25 各取 Top-50，以 RRF k=60 融合；展示融合分数，不是余弦相似度。两路名次与原分数见 JSON。')
         gr.Markdown(f"当前模型：`{query_config['model_id']}` · `{query_config['device']}` / `{query_config['dtype']}`\n\n页面库：`{Path(folder).resolve().name}` · {len(pages)} 页")
-        text = gr.Textbox(label='英文问题', placeholder='Enter a question about these documents')
-        top_k = gr.Slider(1, min(10, len(pages)), value=min(5, len(pages)), step=1, label='Top-k')
-        button = gr.Button('检索', variant='primary')
-        if examples:
-            gr.Examples(examples=examples, inputs=text)
-        status = gr.Markdown()
-        table = gr.Dataframe(headers=['排名', '文档', '物理页码', '相关性', '来源'], interactive=False,
-                             column_widths=['60px', '450px', '100px', '110px', '360px'], wrap=True)
-        gallery = gr.Gallery(label='相关页面', columns=2, object_fit='contain', height=650)
-        download = gr.File(label='下载结果 JSON', interactive=False)
-        def submit(query, k):
-            try:
-                return display_request(model, query_config, index, pages, query, k, temporary.name, log, retrieval)
-            except ValueError as exc:
-                raise gr.Error(str(exc)) from exc
-        button.click(submit, [text, top_k], [gallery, table, download, status], api_name='search', concurrency_limit=1, concurrency_id='query')
-        text.submit(submit, [text, top_k], [gallery, table, download, status], api_name=False, concurrency_limit=1, concurrency_id='query')
+        with gr.Tab('页面检索'):
+            text = gr.Textbox(label='英文问题', placeholder='Enter a question about these documents')
+            top_k = gr.Slider(1, min(10, len(pages)), value=min(5, len(pages)), step=1, label='Top-k')
+            button = gr.Button('检索', variant='primary')
+            if examples:
+                gr.Examples(examples=examples, inputs=text)
+            status = gr.Markdown()
+            table = gr.Dataframe(headers=['排名', '文档', '物理页码', '相关性', '来源'], interactive=False,
+                                 column_widths=['60px', '450px', '100px', '110px', '360px'], wrap=True)
+            gallery = gr.Gallery(label='相关页面', columns=2, object_fit='contain', height=650)
+            download = gr.File(label='下载结果 JSON', interactive=False)
+            def submit(query, k):
+                try:
+                    return display_request(model, query_config, index, pages, query, k, temporary.name, log, retrieval)
+                except ValueError as exc:
+                    raise gr.Error(str(exc)) from exc
+            button.click(submit, [text, top_k], [gallery, table, download, status], api_name='search', concurrency_limit=1, concurrency_id='query')
+            text.submit(submit, [text, top_k], [gallery, table, download, status], api_name=False, concurrency_limit=1, concurrency_id='query')
+        if provider:
+            with gr.Tab('文档问答'):
+                gr.Markdown(f'远程服务：北京百炼 `{agent_config["model"]}`。提交问题后，会发送问题、检索摘要，以及最多 6 页公开资料的图像和正文；页面检索页仍为本地处理。')
+                question = gr.Textbox(label='英文或中文问题')
+                mode = gr.Radio(['rag','agent'],value='rag',label='固定 RAG / 有限工具 Agent')
+                answer_button = gr.Button('向百炼提交问答')
+                answer_html = gr.HTML()
+                record_json = gr.JSON(label='工具记录、终止原因、用量与估算费用')
+                def submit_qa(query, selected_mode):
+                    from .agent import ask
+                    try:
+                        result = ask(query,selected_mode,model,query_config,index,pages,agent_config,provider,retrieval,evidence_texts)
+                        rendered = qa_display(result,pages)
+                        if output:
+                            write_json(Path(output)/f'qa-{time.time_ns()}.json',result)
+                        return rendered,result
+                    except ValueError as exc:
+                        raise gr.Error(str(exc)) from exc
+                answer_button.click(submit_qa,[question,mode],[answer_html,record_json],api_name='ask',concurrency_limit=1,concurrency_id='query')
     try:
         app.launch(server_name='127.0.0.1', server_port=port, share=False, inbrowser=False)
     finally:

@@ -15,6 +15,22 @@ def main():
     text_index.add_argument('--pages', required=True)
     text_index.add_argument('--texts', required=True)
     text_index.add_argument('--output', required=True)
+    for name in ('ask','evaluate-qa'):
+        qa = sub.add_parser(name, help='公开文档的有限问答；需要北京百炼 API')
+        qa.add_argument('--index', required=True)
+        qa.add_argument('--config', required=True)
+        qa.add_argument('--query-config', required=True)
+        qa.add_argument('--retrieval-config')
+        qa.add_argument('--agent-config', required=True)
+        qa.add_argument('--public-corpus', required=True, help='确认可发送的公开页面和来源清单')
+        qa.add_argument('--mode', choices=('rag','agent'), required=True)
+        qa.add_argument('--output', required=True)
+        if name == 'ask':
+            qa.add_argument('question')
+        else:
+            qa.add_argument('--tasks', required=True)
+            qa.add_argument('--repeats', type=int, default=1)
+            qa.add_argument('--probe', required=True, help='同一固定模型及地域的已通过能力探针 result.json')
     text_eval = sub.add_parser("evaluate-text", help="上游页面文本的固定 BM25 对照")
     text_eval.add_argument("--config", required=True)
     text_eval.add_argument("--data", required=True)
@@ -24,6 +40,8 @@ def main():
     serve.add_argument("--config", required=True)
     serve.add_argument("--query-config", required=True)
     serve.add_argument('--retrieval-config')
+    serve.add_argument('--agent-config')
+    serve.add_argument('--public-corpus')
     serve.add_argument("--port", type=int, default=7860)
     serve.add_argument("--output", help="可选的应用验证记录目录，不记录到已有实验中")
     imp = sub.add_parser("import")
@@ -90,6 +108,40 @@ def main():
         from .retrieval import build_text_index
         print(json.dumps(build_text_index(args.pages, args.texts, args.output), ensure_ascii=False, indent=2))
         return 0
+    if args.command in ('ask','evaluate-qa'):
+        from .generation import read_agent_config, Bailian
+        from .agent import ask, load_public_corpus
+        from .search import load_index
+        from .query import load_search_session
+        teacher, student = read_json(args.config), read_json(args.query_config)
+        agent_config = read_agent_config(args.agent_config)
+        if Path(args.output).exists():
+            raise ValueError('问答输出目录已存在，请使用新目录')
+        _, corpus_pages = load_index(args.index, teacher)
+        evidence_texts = load_public_corpus(args.public_corpus, corpus_pages)
+        if args.command == 'evaluate-qa':
+            from .qa_evaluation import validate_tasks
+            validate_tasks(args.tasks, corpus_pages)
+            probe=read_json(args.probe)
+            if probe.get('passed') is not True or probe.get('model')!=agent_config['model'] or probe.get('region')!=agent_config['region']:
+                raise ValueError('先完成同一北京固定模型的图像、工具和结构化输出探针')
+        provider = Bailian(agent_config)
+        loading_started = time.perf_counter()
+        model, index, pages, retrieval = load_search_session(args.index,teacher,student,retrieval_config=retrieval_config)
+        loading_seconds = time.perf_counter()-loading_started
+        if args.command == 'ask':
+            provenance(args.output, {'page_config':teacher,'query_config':student,'agent_config':agent_config,
+                'retrieval_config':retrieval_config,'public_corpus':args.public_corpus,'mode':args.mode})
+            result=ask(args.question,args.mode,model,student,index,pages,agent_config,provider,retrieval,evidence_texts)
+            result['loading_seconds']=loading_seconds
+            write_json(Path(args.output)/'result.json',result)
+            print(json.dumps(result,ensure_ascii=False,indent=2))
+            return 0 if result['completed'] else 75
+        from .qa_evaluation import evaluate_qa
+        result=evaluate_qa(args.tasks,args.output,args.mode,model,student,index,pages,agent_config,provider,retrieval,evidence_texts,args.repeats)
+        write_json(Path(args.output)/'loading.json',{'loading_seconds':loading_seconds,'page_config':teacher})
+        print(json.dumps(result,ensure_ascii=False,indent=2))
+        return 0 if result['stopped'] is None else 75
     if args.command == "evaluate-text":
         from .text_baseline import evaluate_text
         result = evaluate_text(read_json(args.config), args.data, args.output)
@@ -98,7 +150,7 @@ def main():
     if args.command == "serve":
         from .demo import serve_demo
         serve_demo(args.index, read_json(args.config), read_json(args.query_config), args.port, args.output,
-                   retrieval_config=retrieval_config)
+                   retrieval_config=retrieval_config, agent_config_path=args.agent_config, public_corpus=args.public_corpus)
         return 0
     if args.command == "cache-teacher":
         from .targets import cache_teacher

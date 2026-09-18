@@ -1,0 +1,16 @@
+{
+  "provider": "bailian",
+  "region": "cn-beijing",
+  "model": "qwen3-vl-plus-2025-12-19",
+  "temperature": 0,
+  "enable_thinking": false,
+  "max_searches": 3,
+  "max_pages": 6,
+  "max_requests": 8,
+  "max_output_tokens": 8000,
+  "request_timeout": 60,
+  "task_timeout": 180,
+  "max_pixels": 1310720,
+  "phase_budget_cny": 150,
+  "ledger": "../outputs/extensions/api-costs.sqlite3"
+}

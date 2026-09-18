@@ -30,7 +30,7 @@ def extract_page_texts(rows, output):
     sources = {}
     for row in rows:
         source = Path(row['source'])
-        if source.suffix.lower() == '.pdf':
+        if source.suffix.lower() == '.pdf' and source.is_file():
             stat = source.stat()
             sources[str(source)] = {'size': stat.st_size, 'mtime_ns': stat.st_mtime_ns}
     identity = {'kind': 'pdf-text-layer', 'pypdfium2': version('pypdfium2'),
@@ -136,9 +136,9 @@ def import_documents(inputs, output, dpi=150, image_manifest=None, extract_text=
         except (OSError, ValueError, pdfium.PdfiumError) as exc:
             errors.append({"source": str(source), "error": str(exc)})
     validate_pages(rows)
+    text_path = extract_page_texts(rows, output) if extract_text else None
     write_rows(output / "pages.jsonl", rows)
     write_json(output / "import-errors.json", errors)
-    text_path = extract_page_texts(rows, output) if extract_text else None
     result = {"pages": len(rows), "errors": errors, "manifest": str(output / "pages.jsonl"),
               "seconds": time.perf_counter() - started, "dpi": dpi,
               "timing_scope": "input validation, PDF/image rendering or cache reuse, and manifest save"}
