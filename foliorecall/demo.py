@@ -5,13 +5,14 @@ import tempfile
 import time
 
 from .io import provenance, read_json, write_json
-from .query import load_retriever, process_memory, retrieve
+from .query import load_retriever, load_search_session, process_memory, retrieve
 
 
-def display_request(model, config, index, pages, text, top_k, downloads, log=None):
+def display_request(model, config, index, pages, text, top_k, downloads, log=None, retrieval=None):
     from PIL import Image
     started = time.perf_counter()
-    ranked, payload, times = retrieve(model, config, index, pages, text, int(top_k))
+    ranked, payload, times = retrieve(model, config, index, pages, text, int(top_k),
+                                     **({'retrieval': retrieval} if retrieval else {}))
     gallery, table, warnings = [], [], []
     for rank, row in enumerate(ranked, 1):
         name = row.get('document_name', row['doc_id'])
@@ -42,7 +43,7 @@ def display_request(model, config, index, pages, text, top_k, downloads, log=Non
     return gallery, table, str(target), message
 
 
-def serve_demo(folder, teacher_config, query_config, port=7860, output=None):
+def serve_demo(folder, teacher_config, query_config, port=7860, output=None, retrieval_config=None):
     try:
         import gradio as gr
     except ImportError as exc:
@@ -52,11 +53,13 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None):
     if output and Path(output).exists():
         raise ValueError('演示验证记录目录已存在，请使用新目录')
     started = time.perf_counter()
-    model, index, pages = load_retriever(folder, teacher_config, query_config)
+    model, index, pages, retrieval = load_search_session(folder, teacher_config, query_config,
+                                                        retrieval_config=retrieval_config)
     loading_seconds = time.perf_counter() - started
     log = None
     if output:
-        provenance(output, {'page_config': teacher_config, 'query_config': query_config, 'index': str(folder)})
+        provenance(output, {'page_config': teacher_config, 'query_config': query_config, 'index': str(folder),
+                            'retrieval_config': retrieval_config})
         write_json(Path(output) / 'startup.json', {'loading_seconds': loading_seconds,
             'model_loads': 1, 'device': query_config['device'], 'pages': len(pages),
             'memory': process_memory(), 'scope': 'model and index loading; excludes Gradio startup'})
@@ -66,6 +69,8 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None):
     temporary = tempfile.TemporaryDirectory(prefix='foliorecall-demo-')
     with gr.Blocks(title='FolioRecall · 页寻', analytics_enabled=False) as app:
         gr.Markdown('# FolioRecall · 页寻\n英文文档页面检索。分数表示相关性，不表示答案正确概率。')
+        if retrieval:
+            gr.Markdown('混合检索：视觉与 BM25 各取 Top-50，以 RRF k=60 融合；展示融合分数，不是余弦相似度。两路名次与原分数见 JSON。')
         gr.Markdown(f"当前模型：`{query_config['model_id']}` · `{query_config['device']}` / `{query_config['dtype']}`\n\n页面库：`{Path(folder).resolve().name}` · {len(pages)} 页")
         text = gr.Textbox(label='英文问题', placeholder='Enter a question about these documents')
         top_k = gr.Slider(1, min(10, len(pages)), value=min(5, len(pages)), step=1, label='Top-k')
@@ -79,7 +84,7 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None):
         download = gr.File(label='下载结果 JSON', interactive=False)
         def submit(query, k):
             try:
-                return display_request(model, query_config, index, pages, query, k, temporary.name, log)
+                return display_request(model, query_config, index, pages, query, k, temporary.name, log, retrieval)
             except ValueError as exc:
                 raise gr.Error(str(exc)) from exc
         button.click(submit, [text, top_k], [gallery, table, download, status], api_name='search', concurrency_limit=1, concurrency_id='query')

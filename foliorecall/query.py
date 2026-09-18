@@ -61,6 +61,10 @@ def load_query_encoder(config):
 
 
 def load_retriever(folder, teacher_config, query_config=None, candidate_pages=None):
+    return load_search_session(folder, teacher_config, query_config, candidate_pages)[:3]
+
+
+def load_search_session(folder, teacher_config, query_config=None, candidate_pages=None, retrieval_config=None):
     """Validate identities and the full corpus before loading query weights."""
     from .search import load_index
     if query_config is not None:
@@ -69,6 +73,8 @@ def load_retriever(folder, teacher_config, query_config=None, candidate_pages=No
     if candidate_pages is not None:
         from .evaluation import validate_candidate_corpus
         validate_candidate_corpus(pages, candidate_pages)
+    from .retrieval import load_retrieval
+    retrieval = load_retrieval(retrieval_config, pages)
     if query_config is not None:
         import torch
         import faiss
@@ -76,7 +82,7 @@ def load_retriever(folder, teacher_config, query_config=None, candidate_pages=No
         torch.set_num_interop_threads(1)
         faiss.omp_set_num_threads(1)
     model = load_query_encoder(query_config or teacher_config)
-    return model, index, pages
+    return model, index, pages, retrieval
 
 
 def encode_query_texts(model, texts, config):
@@ -94,7 +100,7 @@ def encode_query_texts(model, texts, config):
     return vectors / norms
 
 
-def retrieve(model, config, index, pages, text, top_k=5):
+def retrieve(model, config, index, pages, text, top_k=5, retrieval=None):
     def sync():
         if config["device"] == "cuda":
             import torch
@@ -106,7 +112,10 @@ def retrieve(model, config, index, pages, text, top_k=5):
     vectors = encode_query_texts(model, [text], config)
     sync()
     encoded = time.perf_counter()
-    ranked = search(index, pages, vectors, top_k)[0]
+    ranked = search(index, pages, vectors, 50 if retrieval else top_k)[0]
+    if retrieval:
+        from .retrieval import hybrid_ranking
+        ranked = hybrid_ranking(retrieval, pages, text, ranked, top_k)
     searched = time.perf_counter()
     payload = json.dumps(ranked, ensure_ascii=False)
     ended = time.perf_counter()
@@ -161,7 +170,7 @@ def weight_file_bytes(config):
     return model_file_sizes(config)['weight_file_bytes']
 
 
-def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3):
+def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3, retrieval=None):
     import torch
     import faiss
     from .evaluation import metrics
@@ -175,7 +184,7 @@ def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3)
         if not set(qrels[qid]).issubset(candidates):
             raise ValueError("候选库缺失 qrels 页面")
     for i in range(warmups):
-        retrieve(model, config, index, pages, queries[i % len(queries)]["query"], 10)
+        retrieve(model, config, index, pages, queries[i % len(queries)]["query"], 10, **({'retrieval': retrieval} if retrieval else {}))
     warm_memory = process_memory()
     loading_warmup_cuda = {'allocated_bytes': torch.cuda.max_memory_allocated(),
                            'reserved_bytes': torch.cuda.max_memory_reserved()} if config['device'] == 'cuda' else None
@@ -187,7 +196,7 @@ def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3)
     for repeat in range(repeats):
         current = []
         for query in queries:
-            ranked, _, times = retrieve(model, config, index, pages, query["query"], 10)
+            ranked, _, times = retrieve(model, config, index, pages, query["query"], 10, **({'retrieval': retrieval} if retrieval else {}))
             row = dict(times, repeat=repeat, query_id=str(query["query_id"]))
             requests.append(row)
             current.append(row)

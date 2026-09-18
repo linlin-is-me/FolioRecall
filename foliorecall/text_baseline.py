@@ -18,6 +18,13 @@ def tokenize(text):
     return re.findall(r'\w+', unicodedata.normalize('NFKC', text).casefold())
 
 
+def make_bm25(tokens, params):
+    from rank_bm25 import BM25Okapi
+    if not tokens or not any(tokens):
+        raise ValueError('整个页面库没有有效文本')
+    return BM25Okapi(tokens, **params)
+
+
 def text_request(model, pages, text, top_k=10):
     started = time.perf_counter()
     if not isinstance(text, str) or not text.strip():
@@ -35,7 +42,6 @@ def text_request(model, pages, text, top_k=10):
 
 def evaluate_text(config, data, output):
     from importlib.metadata import version
-    from rank_bm25 import BM25Okapi
     output, data = Path(output), Path(data)
     if output.exists():
         raise ValueError('文本评测目录已存在，请使用新输出目录')
@@ -50,7 +56,7 @@ def evaluate_text(config, data, output):
     if not nonempty:
         raise ValueError('整个页面库没有有效文本')
     params = {key: config['bm25'][key] for key in ('k1', 'b', 'epsilon')}
-    model = BM25Okapi(tokens, **params)
+    model = make_bm25(tokens, params)
     index_path = output / 'index.json'
     write_json(index_path, {'params': params, 'page_ids': [p['page_id'] for p in pages], 'tokens': tokens})
     build_seconds = time.perf_counter()-started

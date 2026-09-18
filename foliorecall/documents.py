@@ -22,7 +22,52 @@ def validate_pages(rows):
     return rows
 
 
-def import_documents(inputs, output, dpi=150, image_manifest=None):
+def extract_page_texts(rows, output):
+    """Extract existing PDF text only; unchanged imports reuse a bound sidecar."""
+    import pypdfium2 as pdfium
+    from importlib.metadata import version
+    output = Path(output)
+    sources = {}
+    for row in rows:
+        source = Path(row['source'])
+        if source.suffix.lower() == '.pdf':
+            stat = source.stat()
+            sources[str(source)] = {'size': stat.st_size, 'mtime_ns': stat.st_mtime_ns}
+    identity = {'kind': 'pdf-text-layer', 'pypdfium2': version('pypdfium2'),
+                'sources': sources, 'pages': [{k: r[k] for k in ('page_id', 'source', 'page_number')} for r in rows]}
+    record, target = output / 'text-source.json', output / 'texts.jsonl'
+    if record.exists():
+        if read_json(record) != identity:
+            raise ValueError('文本提取输入已变化，请使用新输出目录')
+        if target.exists():
+            cached = read_rows(target)
+            if [r['page_id'] for r in cached] != [r['page_id'] for r in rows]:
+                raise ValueError('文本缓存页面顺序不匹配')
+            return target
+    by_source = {}
+    for source in sources:
+        with pdfium.PdfDocument(source) as document:
+            values = []
+            for i in range(len(document)):
+                page = document[i]
+                textpage = page.get_textpage()
+                try:
+                    values.append(textpage.get_text_range())
+                finally:
+                    textpage.close()
+                    page.close()
+            by_source[source] = values
+    texts = [{'page_id': r['page_id'], 'text': by_source[r['source']][r['page_number']-1]
+              if r['source'] in by_source else '', 'source_kind': 'pdf-text-layer' if r['source'] in by_source else 'no-text-layer'}
+             for r in rows]
+    temporary = target.with_suffix('.jsonl.tmp')
+    write_rows(temporary, texts)
+    temporary.replace(target)
+    write_json(record, identity)
+    return target
+
+
+def import_documents(inputs, output, dpi=150, image_manifest=None, extract_text=False):
     started = time.perf_counter()
     try:
         import pypdfium2 as pdfium
@@ -93,8 +138,12 @@ def import_documents(inputs, output, dpi=150, image_manifest=None):
     validate_pages(rows)
     write_rows(output / "pages.jsonl", rows)
     write_json(output / "import-errors.json", errors)
+    text_path = extract_page_texts(rows, output) if extract_text else None
     result = {"pages": len(rows), "errors": errors, "manifest": str(output / "pages.jsonl"),
               "seconds": time.perf_counter() - started, "dpi": dpi,
               "timing_scope": "input validation, PDF/image rendering or cache reuse, and manifest save"}
+    if text_path:
+        result['texts'] = str(text_path)
+        result['timing_scope'] += '; PDF text-layer extraction or cache reuse, no OCR'
     write_json(output / "import-result.json", result)
     return result

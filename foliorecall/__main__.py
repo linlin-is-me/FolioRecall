@@ -11,6 +11,10 @@ def main():
     command_started = time.perf_counter()
     parser = argparse.ArgumentParser(description="FolioRecall visual document retrieval")
     sub = parser.add_subparsers(dest="command", required=True)
+    text_index = sub.add_parser('index-text', help='建立按页面 ID 绑定的 BM25 文本索引')
+    text_index.add_argument('--pages', required=True)
+    text_index.add_argument('--texts', required=True)
+    text_index.add_argument('--output', required=True)
     text_eval = sub.add_parser("evaluate-text", help="上游页面文本的固定 BM25 对照")
     text_eval.add_argument("--config", required=True)
     text_eval.add_argument("--data", required=True)
@@ -19,6 +23,7 @@ def main():
     serve.add_argument("--index", required=True)
     serve.add_argument("--config", required=True)
     serve.add_argument("--query-config", required=True)
+    serve.add_argument('--retrieval-config')
     serve.add_argument("--port", type=int, default=7860)
     serve.add_argument("--output", help="可选的应用验证记录目录，不记录到已有实验中")
     imp = sub.add_parser("import")
@@ -26,6 +31,7 @@ def main():
     imp.add_argument("--image-manifest")
     imp.add_argument("--output", required=True)
     imp.add_argument("--dpi", type=int, default=150)
+    imp.add_argument('--extract-text', action='store_true', help='提取 PDF 文本层；扫描页留空，不运行 OCR')
     cache = sub.add_parser("cache-teacher")
     cache.add_argument("--teacher", default="outputs/stage2/teacher.json")
     cache.add_argument("--data", default="data/vdr-stage2")
@@ -58,6 +64,7 @@ def main():
         elif name in ("query", "evaluate"):
             command.add_argument("--index", required=True)
             command.add_argument("--query-config")
+            command.add_argument('--retrieval-config')
             if name == "query":
                 command.add_argument("text")
                 command.add_argument("--top-k", type=int, default=5)
@@ -77,6 +84,12 @@ def main():
                 command.add_argument("--max-seconds", type=float, default=3600)
                 command.add_argument("--checkpoint-only", action="store_true", help="Save checkpoints without development evaluation or final encoding probes")
     args = parser.parse_args()
+    from .retrieval import read_retrieval_config
+    retrieval_config = read_retrieval_config(args.retrieval_config) if getattr(args, 'retrieval_config', None) else None
+    if args.command == 'index-text':
+        from .retrieval import build_text_index
+        print(json.dumps(build_text_index(args.pages, args.texts, args.output), ensure_ascii=False, indent=2))
+        return 0
     if args.command == "evaluate-text":
         from .text_baseline import evaluate_text
         result = evaluate_text(read_json(args.config), args.data, args.output)
@@ -84,7 +97,8 @@ def main():
         return 0
     if args.command == "serve":
         from .demo import serve_demo
-        serve_demo(args.index, read_json(args.config), read_json(args.query_config), args.port, args.output)
+        serve_demo(args.index, read_json(args.config), read_json(args.query_config), args.port, args.output,
+                   retrieval_config=retrieval_config)
         return 0
     if args.command == "cache-teacher":
         from .targets import cache_teacher
@@ -98,7 +112,7 @@ def main():
         return 0
     if args.command == "import":
         from .documents import import_documents
-        result = import_documents(args.inputs, args.output, args.dpi, args.image_manifest)
+        result = import_documents(args.inputs, args.output, args.dpi, args.image_manifest, args.extract_text)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result["pages"] else 1
     config = read_json(args.config)
@@ -109,10 +123,10 @@ def main():
         print(json.dumps(result, indent=2))
         return 0 if result['complete'] else 75
     if args.command == "query":
-        from .query import load_retriever, retrieve
-        model, index, pages = load_retriever(args.index, config,
-            query_config if args.query_config else None)
-        result, payload, _ = retrieve(model, query_config, index, pages, args.text, args.top_k)
+        from .query import load_search_session, retrieve
+        model, index, pages, retrieval = load_search_session(args.index, config,
+            query_config if args.query_config else None, retrieval_config=retrieval_config)
+        result, payload, _ = retrieve(model, query_config, index, pages, args.text, args.top_k, retrieval=retrieval)
         if args.json:
             print(payload)
         else:
@@ -157,12 +171,16 @@ def main():
     index, pages = load_index(args.index, config)
     data = Path(args.data)
     validate_candidate_corpus(pages, read_rows(data / "pages.jsonl"))
+    from .retrieval import load_retrieval
+    retrieval = load_retrieval(retrieval_config, pages)
     from .benchmark_data import load_dataset_provenance
     dataset = load_dataset_provenance(data) if (data / "source.json").exists() else None
     if (Path(args.output) / "result.json").exists():
         raise ValueError("评测结果已存在，请使用新输出目录")
     provenance(args.output, {"page_config": config, "query_config": query_config} if args.query_config else config)
-    if args.benchmark or args.query_config:
+    if retrieval_config:
+        write_json(Path(args.output) / 'retrieval-config.json', retrieval_config)
+    if args.benchmark or args.query_config or retrieval:
         import torch
         import faiss
         torch.set_num_threads(4)
@@ -171,13 +189,19 @@ def main():
     loading_started = time.perf_counter()
     model = load_query_encoder(query_config)
     loading_seconds = time.perf_counter() - loading_started
-    if args.benchmark or args.query_config:
+    if args.benchmark or args.query_config or retrieval:
         result = benchmark(model, query_config, index, pages, read_rows(data / "queries.jsonl"), read_json(data / "qrels.json"),
-            warmups=5 if args.benchmark else 1, repeats=3 if args.benchmark else 1)
+            warmups=5 if args.benchmark else 1, repeats=3 if args.benchmark else 1, retrieval=retrieval)
         result["model_loading_seconds"] = loading_seconds
         result.update(index_sizes(args.index))
         result["index_bytes"] = result["deployment_index_bytes"]
         result["index_size_scope"] = "index.faiss + pages.jsonl + config.json; excludes cache/previews/run records"
+        if retrieval:
+            result['retrieval_config'] = retrieval_config
+            result['text_index_bytes'] = retrieval['index_bytes']
+            result['index_bytes'] += retrieval['index_bytes']
+            result['index_size_scope'] += '; hybrid includes text index.json'
+            result['timing_scope'] += '; includes BM25 Top-50 and RRF'
     else:
         result = evaluate(model, config, index, pages, read_rows(data / "queries.jsonl"), read_json(data / "qrels.json"))
     if dataset is not None:
