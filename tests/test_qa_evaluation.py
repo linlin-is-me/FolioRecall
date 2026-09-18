@@ -16,11 +16,28 @@ class QAEvaluationTests(unittest.TestCase):
             write_json(root/'status.json',{'qa_reference_frozen':False,'evaluation_allowed':False})
             with self.assertRaises(ValueError):
                 validate_tasks(root/'tasks.jsonl',[])
-            write_json(root/'status.json',{'qa_reference_frozen':True,'evaluation_allowed':True})
+            write_json(root/'status.json',{'qa_reference_frozen':True,'evaluation_allowed':True,'corpus_pages':[]})
             self.assertEqual(len(validate_tasks(root/'tasks.jsonl',[])[0]),1)
             write_rows(root/'tasks.jsonl',[dict(task,question_zh=None)])
             with self.assertRaises(ValueError):
                 validate_tasks(root/'tasks.jsonl',[])
+
+    def test_full_corpus_binding_rejects_same_ids_from_another_domain(self):
+        from foliorecall.retrieval import page_identity
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            pages=[{'page_id':'1','doc_id':'finance','page_number':1},
+                   {'page_id':'2','doc_id':'finance','page_number':2}]
+            task={'task_id':'finance:1','question_en':'What?', 'question_zh':'什么？',
+                  'answerable':True,'reference_facts':['a'],'evidence_page_ids':['1'],
+                  'rubric':'support','review':{'assistant':'checked'}}
+            write_rows(root/'tasks.jsonl',[task])
+            write_json(root/'status.json',{'qa_reference_frozen':True,'evaluation_allowed':True,
+                                          'corpus_pages':page_identity(pages)})
+            self.assertEqual(len(validate_tasks(root/'tasks.jsonl',pages)[0]),1)
+            for wrong in ([dict(p,doc_id='hr') for p in pages], pages[:1], list(reversed(pages))):
+                with self.assertRaisesRegex(ValueError,'完整页面库'):
+                    validate_tasks(root/'tasks.jsonl',wrong)
 
     def test_languages_and_review_provenance_stay_separate(self):
         base={'task_id':'domain:1','repeat':0,'completed':True,'timing':{'task_seconds':2},

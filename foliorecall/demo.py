@@ -63,7 +63,7 @@ def qa_display(result, pages):
         pid = evidence['page_id']
         try:
             image,_ = read_evidence(mapping[pid],1310720)
-            chunks.append(f'<figure id="qa-page-{quote(pid,safe="")}"><figcaption>{escape(evidence.get("document_name") or pid)} · 物理第 {evidence["page_number"]} 页</figcaption><img style="max-width:100%" src="{image["image_url"]["url"]}" alt="Evidence page"></figure>')
+            chunks.append(f'<figure id="qa-page-{escape(pid)}"><figcaption>{escape(evidence.get("document_name") or pid)} · 物理第 {evidence["page_number"]} 页</figcaption><img style="max-width:100%" src="{image["image_url"]["url"]}" alt="Evidence page"></figure>')
         except (OSError,ValueError):
             chunks.append('<p>证据预览暂不可读：'+escape(pid)+'</p>')
     result['timing']['display_preparation_seconds'] = time.perf_counter()-started
@@ -99,7 +99,8 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
     log = None
     if output:
         provenance(output, {'page_config': teacher_config, 'query_config': query_config, 'index': str(folder),
-                            'retrieval_config': retrieval_config})
+                            'retrieval_config': retrieval_config, 'agent_config': agent_config,
+                            'public_corpus': str(public_corpus) if public_corpus else None})
         write_json(Path(output) / 'startup.json', {'loading_seconds': loading_seconds,
             'model_loads': 1, 'device': query_config['device'], 'pages': len(pages),
             'memory': process_memory(), 'scope': 'model and index loading; excludes Gradio startup'})

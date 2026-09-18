@@ -3,6 +3,7 @@ from pathlib import Path
 import time
 from .io import read_json, read_rows, write_json, write_rows, provenance
 from .agent import ask
+from .retrieval import page_identity
 
 RATINGS = ('fact_correctness', 'answer_coverage', 'citation_support', 'insufficiency_handling')
 
@@ -12,6 +13,8 @@ def validate_tasks(path, pages):
     status = read_json(path.parent/'status.json')
     if status.get('qa_reference_frozen') is not True or status.get('evaluation_allowed') is not True:
         raise ValueError('任务参考事实与评分规则尚未冻结，不能进行 QA 验收')
+    if status.get('corpus_pages') != page_identity(pages):
+        raise ValueError('QA 任务绑定的完整页面库不匹配；不同领域的相同页面 ID 不能混用')
     tasks = read_rows(path)
     ids = [t['task_id'] for t in tasks]
     candidates = {p['page_id'] for p in pages}

@@ -136,6 +136,7 @@ def task_specs():
 
 
 def freeze(corpus, output):
+    from foliorecall.retrieval import page_identity
     output=Path(output)
     if output.exists():
         raise ValueError('冻结目录已存在，请使用新版本')
@@ -161,6 +162,7 @@ def freeze(corpus, output):
     write_rows(output/'tasks.jsonl',tasks)
     write_json(output/'status.json',{'split':'acceptance','logical_tasks':40,'language_variants':80,
         'qa_reference_frozen':True,'evaluation_allowed':True,'human_gold':False,
+        'corpus_pages':page_identity(pages),
         'human_review_selection':['jrc-01','jrc-04','jrc-11','jrc-16','jrc-21','jrc-25','jrc-29','jrc-33','jrc-37','jrc-38'],
         'scope':'Initial assistant reference freeze; human review pending. No system outputs used in task construction.'})
     print(counts)
