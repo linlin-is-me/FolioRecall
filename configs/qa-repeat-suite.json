@@ -1,0 +1,84 @@
+{
+  "suite_id": "qa-repeat-frozen-v1",
+  "conditions": [
+    "visual-rag",
+    "hybrid-rag",
+    "hybrid-agent"
+  ],
+  "repeats": 3,
+  "order": "domain, condition, repeat, frozen task order, en then zh",
+  "common": {
+    "config": "configs/baseline.json",
+    "query_config": "configs/student-ml-cpu.json",
+    "agent_config": "configs/agent-bailian.json",
+    "probe": "outputs/extensions/A/api-probe/20260919-run1/result.json"
+  },
+  "domains": [
+    {
+      "name": "hr",
+      "spec": {
+        "index": "indexes/hr-original",
+        "tasks": "outputs/extensions/A/data/dev-frozen-v1/hr/tasks.jsonl",
+        "public_corpus": "outputs/extensions/A/data/dev-frozen-v1/hr/public-corpus.json",
+        "retrieval_config": "outputs/extensions/A/hybrid-cpu-v1/hr/hybrid.json"
+      },
+      "task_ids": [
+        "hr:0",
+        "hr:10"
+      ]
+    },
+    {
+      "name": "computer_science",
+      "spec": {
+        "index": "outputs/stage4/indexes/computer_science/original",
+        "tasks": "outputs/extensions/A/data/dev-frozen-v1/computer_science/tasks.jsonl",
+        "public_corpus": "outputs/extensions/A/data/dev-frozen-v1/computer_science/public-corpus.json",
+        "retrieval_config": "outputs/extensions/A/hybrid-cpu-v1/computer_science/hybrid.json"
+      },
+      "task_ids": [
+        "computer_science:0",
+        "computer_science:1"
+      ]
+    },
+    {
+      "name": "finance_en",
+      "spec": {
+        "index": "outputs/stage4/indexes/finance_en/original",
+        "tasks": "outputs/extensions/A/data/dev-frozen-v1/finance_en/tasks.jsonl",
+        "public_corpus": "outputs/extensions/A/data/dev-frozen-v1/finance_en/public-corpus.json",
+        "retrieval_config": "outputs/extensions/A/hybrid-cpu-v1/finance_en/hybrid.json"
+      },
+      "task_ids": [
+        "finance_en:10",
+        "finance_en:1"
+      ]
+    },
+    {
+      "name": "industrial",
+      "spec": {
+        "index": "outputs/stage4/indexes/industrial/original",
+        "tasks": "outputs/extensions/A/data/dev-frozen-v1/industrial/tasks.jsonl",
+        "public_corpus": "outputs/extensions/A/data/dev-frozen-v1/industrial/public-corpus.json",
+        "retrieval_config": "outputs/extensions/A/hybrid-cpu-v1/industrial/hybrid.json"
+      },
+      "task_ids": [
+        "industrial:1",
+        "industrial:0"
+      ]
+    },
+    {
+      "name": "pharmaceuticals",
+      "spec": {
+        "index": "outputs/stage4/indexes/pharmaceuticals/original",
+        "tasks": "outputs/extensions/A/data/dev-frozen-v1/pharmaceuticals/tasks.jsonl",
+        "public_corpus": "outputs/extensions/A/data/dev-frozen-v1/pharmaceuticals/public-corpus.json",
+        "retrieval_config": "outputs/extensions/A/hybrid-cpu-v1/pharmaceuticals/hybrid.json"
+      },
+      "task_ids": [
+        "pharmaceuticals:0",
+        "pharmaceuticals:106"
+      ]
+    }
+  ],
+  "selection": "outputs/extensions/A/data/dev-frozen-v1/repeat-tasks.json"
+}

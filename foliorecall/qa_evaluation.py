@@ -1,8 +1,7 @@
 """Task-level execution records; semantic ratings require attributed reviews."""
 from pathlib import Path
-import time
-from .io import read_json, read_rows, write_json, write_rows, provenance
-from .agent import ask
+import math
+from .io import read_json, read_rows
 from .retrieval import page_identity
 
 RATINGS = ('fact_correctness', 'answer_coverage', 'citation_support', 'insufficiency_handling')
@@ -16,6 +15,15 @@ def validate_tasks(path, pages):
     if status.get('corpus_pages') != page_identity(pages):
         raise ValueError('QA 任务绑定的完整页面库不匹配；不同领域的相同页面 ID 不能混用')
     tasks = read_rows(path)
+    if status.get('schema_version') == 2:
+        from .qa_storage import digest
+        if digest(tasks) != status.get('tasks_digest'):
+            raise ValueError('冻结任务内容发生变化，需重新核验后使用新版本')
+        source = read_json(status['source_record'])
+        if any(source.get(k)!=status.get(k) for k in ('dataset','revision')) or source.get('task',{}).get('name') != status.get('task'):
+            raise ValueError('冻结任务语料领域或 revision 不匹配')
+        if any(t.get('task') != status['task'] for t in tasks):
+            raise ValueError('任务领域不匹配')
     ids = [t['task_id'] for t in tasks]
     candidates = {p['page_id'] for p in pages}
     if not ids or len(ids) != len(set(ids)):
@@ -68,30 +76,113 @@ def summarize_runs(rows, reviews=None):
         'scope':'completion and valid citation IDs do not establish answer correctness or citation support'}
 
 
-def evaluate_qa(tasks_path, output, mode, model, query_config, index, pages, agent_config, provider,
-                retrieval=None, evidence_texts=None, repeats=1):
-    output=Path(output)
-    if output.exists():
-        raise ValueError('QA 结果目录已存在，请使用新目录')
-    tasks,status=validate_tasks(tasks_path,pages)
-    if repeats not in (1,3) or (repeats==3 and (status.get('split')!='development' or len(tasks)!=10)):
-        raise ValueError('仅固定 10 条开发任务可做 3 轮波动测量')
-    provenance(output,{'agent_config':agent_config,'query_config':query_config,'retrieval_config':retrieval['config'] if retrieval else None,
-                       'tasks':str(tasks_path),'task_status':status,'mode':mode,'repeats':repeats})
-    write_rows(output/'tasks.jsonl',tasks)
-    rows=[]
-    started=time.monotonic()
-    for repeat in range(repeats):
-        for task in tasks:
-            for language in ('en','zh'):
-                result=ask(task['question_'+language],mode,model,query_config,index,pages,agent_config,provider,retrieval,evidence_texts)
-                result.update(task_id=task['task_id'],language=language,repeat=repeat,category=task.get('category'))
-                rows.append(result)
-                write_rows(output/'results.jsonl',rows)
-                if result['termination_reason'] in ('phase_budget_exhausted','api_http_401','api_http_403','api_http_404','api_transport_or_json_error','missing_usage'):
-                    summary=summarize_runs(rows) | {'stopped':result['termination_reason'],'seconds':time.monotonic()-started}
-                    write_json(output/'summary.json',summary)
-                    return summary
-    summary=summarize_runs(rows) | {'stopped':None,'seconds':time.monotonic()-started}
-    write_json(output/'summary.json',summary)
-    return summary
+def summarize_attempts(attempts, planned, reviews=None, planned_keys=None, ledger_records=None):
+    """First attempts remain the primary sample; recovery is a separate stratum."""
+    from .qa_storage import digest
+    keys = [(digest(a['key']),a['attempt']) for a in attempts]
+    if len(keys) != len(set(keys)):
+        raise ValueError('重复运行键及尝试号')
+    if planned_keys is not None:
+        allowed = {digest(k) for k in planned_keys}
+        if len(allowed) != planned or any(k not in allowed for k,a in keys):
+            raise ValueError('尝试记录不属于固定运行清单')
+    for a in attempts:
+        if a['attempt'] not in (1,2) or a.get('state') not in ('running','finished'):
+            raise ValueError('无效尝试号或状态')
+        if a['state']=='finished' and a.get('answer_digest') != digest(a['result']['answer']):
+            raise ValueError('回答内容与保存的摘要不匹配')
+        if a['attempt']==2 and (digest(a['key']),1) not in keys:
+            raise ValueError('补跑记录缺少首次尝试')
+    lookup = {key:a for key,a in zip(keys,attempts)}
+    seen, accepted = set(), []
+    for review in reviews or []:
+        key = (digest(review['key']),review['attempt'])
+        actor = review['reviewer_type']
+        if key not in lookup or actor not in ('human','assistant','automatic') or (key,actor) in seen:
+            raise ValueError('评分运行键、尝试或来源不匹配/重复')
+        row = lookup[key]
+        if row.get('state') != 'finished' or review.get('answer_digest') != row.get('answer_digest'):
+            raise ValueError('评分回答内容不匹配')
+        for metric in RATINGS:
+            value = review.get(metric)
+            if value is None:
+                if not review.get('not_applicable',{}).get(metric):
+                    raise ValueError('不适用评分需要说明原因；未评审请勿导入记录')
+            elif type(value) not in (int,float) or not math.isfinite(value) or not 0 <= value <= 1:
+                raise ValueError('评分必须为有限的 0–1 数值')
+        task = row.get('task',{})
+        if task.get('reference_facts') and review['answer_coverage'] is None:
+            raise ValueError('存在必需事实时，覆盖度不能设为不适用')
+        if task.get('reference_facts') and not row['result']['answer']['claims'] and review['answer_coverage'] != 0:
+            raise ValueError('存在必需事实时，空答案覆盖度必须为零')
+        if task.get('answerability')=='insufficient' and not task.get('reference_facts'):
+            if review['answer_coverage'] is not None:
+                raise ValueError('完全无答案任务没有必需事实，覆盖度应为 null')
+            if not row['result']['answer']['claims'] and any(review[m] is not None for m in ('fact_correctness','citation_support')):
+                raise ValueError('没有事实声明的拒答不自动获得事实或引用满分')
+        seen.add((key,actor)); accepted.append(review)
+    first = [a for a in attempts if a['attempt']==1]
+    recovery = [a for a in attempts if a['attempt']==2]
+    def aggregate(rows):
+        finished = [a for a in rows if a.get('state')=='finished']
+        success = sum(a['result']['completed'] for a in finished)
+        return {'attempted':len(rows),'finished':len(finished),'completed':success,
+                'completion_rate':success/len(rows) if rows else None,
+                'incomplete_budget':len(rows)-len(finished),
+                'mean_task_seconds':sum(a['result']['timing']['task_seconds'] for a in finished)/len(finished) if finished else None,
+                'total_actual_task_seconds':sum(a['result']['timing']['task_seconds'] for a in finished),
+                'manual_restart_gap_seconds':sum(a.get('gap_seconds',0) for a in finished),
+                'known_cost_cny':sum(a['result'].get('estimated_cost_cny',0) for a in finished)}
+    groups = {}
+    for a in first:
+        k = a['key']
+        name = '/'.join(k[x] for x in ('condition','domain','language'))
+        groups.setdefault(name,[]).append(a)
+    planned_groups = {}
+    for k in planned_keys or []:
+        name='/'.join(k[x] for x in ('condition','domain','language'))
+        planned_groups[name]=planned_groups.get(name,0)+1
+        groups.setdefault(name,[])
+    review_groups = {}
+    for r in accepted:
+        k = r['key']
+        name = '/'.join([k['condition'],k['domain'],k['language'],r['reviewer_type'],str(r['attempt'])])
+        review_groups.setdefault(name,[]).append(r)
+    semantic = {}
+    for name, rows in review_groups.items():
+        k = rows[0]['key']; attempt = rows[0]['attempt']
+        denominator = sum(a['attempt']==attempt and all(a['key'][f]==k[f] for f in ('condition','domain','language')) for a in attempts)
+        semantic[name] = {'reviewed':len(rows),'attempted':denominator,'coverage':len(rows)/denominator,
+                         'metrics':{m:{'count':sum(r[m] is not None for r in rows),
+                             'mean':sum(r[m] for r in rows if r[m] is not None)/sum(r[m] is not None for r in rows) if any(r[m] is not None for r in rows) else None} for m in RATINGS}}
+    calls = {}
+    for a in attempts:
+        for i,c in enumerate(a.get('result',{}).get('api_calls',[])):
+            calls[c.get('ledger_id') or f'{digest(a["key"])}:{a["attempt"]}:{i}'] = c
+    for c in ledger_records or []:
+        calls[c['id']]={'ledger_id':c['id'], 'cost_cny':c['cny'] if c['status']=='estimated_from_usage' else 0,
+                        'reservation_cny':c['cny'] if c['status']=='reserved_unknown_charge' else 0,
+                        'cost_status':c['status']}
+    translations = {}
+    for a in attempts:
+        historical=a.get('result',{}).get('translation_history')
+        if historical:
+            translations[digest(a['key'])]=historical['cost_cny']/3
+    pairs = {}
+    for a in first:
+        key={k:v for k,v in a['key'].items() if k!='language'}
+        entry=pairs.setdefault(digest(key),{'key':key,'languages':{}})
+        entry['languages'][a['key']['language']]={'state':a['state'],'completed':a.get('result',{}).get('completed'),
+            'answer_digest':a.get('answer_digest')}
+    return {'schema_version':2,'planned':planned,'pending':planned-len(first),
+            'logical_tasks':len({(a['key']['domain'],a['key']['task_id']) for a in first}),
+            'paired_languages_not_independent':True,'primary':aggregate(first),'recovery':aggregate(recovery),
+            'by_condition_domain_language':{k:aggregate(v)|{'planned':planned_groups.get(k),
+                  'pending':planned_groups[k]-len(v) if k in planned_groups else None} for k,v in groups.items()},
+            'primary_language_pairs':list(pairs.values()),
+            'semantic_reviews':semantic,'semantic_quality_status':'reviewed_subset_only' if accepted else 'pending_review',
+            'all_attempts_known_cost_cny':sum(c.get('cost_cny',0) for c in calls.values()),
+            'unknown_reservation_cny':sum(c.get('reservation_cny',0) for c in calls.values() if c.get('cost_status')=='reserved_unknown_charge'),
+            'translation_allocated_cost_cny':sum(translations.values()),
+            'translation_cost_scope':'historical conversion cost / 3 per logical condition, not charged again on recovery',
+            'ledger_scope':'API reservations after process crashes must also be read from the durable ledger; results alone are not the phase balance'}

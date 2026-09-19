@@ -8,7 +8,7 @@ from .io import read_json, read_rows, write_json, provenance
 
 
 def main():
-    command_started = time.perf_counter()
+    command_started = time.monotonic()
     parser = argparse.ArgumentParser(description="FolioRecall visual document retrieval")
     sub = parser.add_subparsers(dest="command", required=True)
     text_index = sub.add_parser('index-text', help='建立按页面 ID 绑定的 BM25 文本索引')
@@ -31,6 +31,11 @@ def main():
             qa.add_argument('--tasks', required=True)
             qa.add_argument('--repeats', type=int, default=1)
             qa.add_argument('--probe', required=True, help='同一固定模型及地域的已通过能力探针 result.json')
+            qa.add_argument('--resume', action='store_true')
+            qa.add_argument('--stop-after', type=int)
+            qa.add_argument('--max-seconds', type=float)
+            qa.add_argument('--dry-run', action='store_true')
+            qa.add_argument('--translation-cache')
     text_eval = sub.add_parser("evaluate-text", help="上游页面文本的固定 BM25 对照")
     text_eval.add_argument("--config", required=True)
     text_eval.add_argument("--data", required=True)
@@ -109,6 +114,15 @@ def main():
         print(json.dumps(build_text_index(args.pages, args.texts, args.output), ensure_ascii=False, indent=2))
         return 0
     if args.command in ('ask','evaluate-qa'):
+        if args.command == 'evaluate-qa':
+            from .qa_runtime import prepare_unit, execute_plan, provider_factory
+            spec = {key:getattr(args,key) for key in ('index','config','query_config','retrieval_config',
+                    'agent_config','public_corpus','mode','tasks','probe')}
+            unit = prepare_unit(spec,args.repeats,translation_cache=args.translation_cache)
+            result = execute_plan(args.output,unit['identity'],unit['jobs'],lambda:provider_factory([unit]),
+                [unit['agent']],args.resume,args.stop_after,args.max_seconds,args.dry_run,command_started)
+            print(json.dumps(result,ensure_ascii=False,indent=2))
+            return 0 if result['stopped'] is None else 75
         from .generation import read_agent_config, Bailian
         from .agent import ask, load_public_corpus
         from .search import load_index
@@ -119,12 +133,6 @@ def main():
             raise ValueError('问答输出目录已存在，请使用新目录')
         _, corpus_pages = load_index(args.index, teacher)
         evidence_texts = load_public_corpus(args.public_corpus, corpus_pages)
-        if args.command == 'evaluate-qa':
-            from .qa_evaluation import validate_tasks
-            validate_tasks(args.tasks, corpus_pages)
-            probe=read_json(args.probe)
-            if probe.get('passed') is not True or probe.get('model')!=agent_config['model'] or probe.get('region')!=agent_config['region']:
-                raise ValueError('先完成同一北京固定模型的图像、工具和结构化输出探针')
         provider = Bailian(agent_config)
         loading_started = time.perf_counter()
         model, index, pages, retrieval = load_search_session(args.index,teacher,student,retrieval_config=retrieval_config)
@@ -137,11 +145,6 @@ def main():
             write_json(Path(args.output)/'result.json',result)
             print(json.dumps(result,ensure_ascii=False,indent=2))
             return 0 if result['completed'] else 75
-        from .qa_evaluation import evaluate_qa
-        result=evaluate_qa(args.tasks,args.output,args.mode,model,student,index,pages,agent_config,provider,retrieval,evidence_texts,args.repeats)
-        write_json(Path(args.output)/'loading.json',{'loading_seconds':loading_seconds,'page_config':teacher})
-        print(json.dumps(result,ensure_ascii=False,indent=2))
-        return 0 if result['stopped'] is None else 75
     if args.command == "evaluate-text":
         from .text_baseline import evaluate_text
         result = evaluate_text(read_json(args.config), args.data, args.output)
