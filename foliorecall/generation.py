@@ -1,5 +1,6 @@
 """One fixed Beijing Bailian provider with durable conservative cost accounting."""
 import json
+import math
 import asyncio
 import os
 from pathlib import Path
@@ -7,12 +8,15 @@ import sqlite3
 import time
 from urllib.parse import urlparse
 import uuid
+from email.utils import parsedate_to_datetime
 
 MODEL = 'qwen3-vl-plus-2025-12-19'
 
 
 class TaskStopped(RuntimeError):
-    pass
+    def __init__(self, reason, record=None):
+        super().__init__(reason)
+        self.record = record or {}
 
 
 def validate_agent_config(config):
@@ -47,16 +51,30 @@ class CostLedger:
         self.path, self.cap = str(path), cap
         with sqlite3.connect(self.path) as db:
             db.execute('CREATE TABLE IF NOT EXISTS calls (id TEXT PRIMARY KEY, cny REAL, status TEXT, usage TEXT, at REAL)')
+            columns = {r[1] for r in db.execute('PRAGMA table_info(calls)')}
+            for name, kind in [('reservation_cny','REAL'), ('context','TEXT'), ('error','TEXT')]:
+                if name not in columns:
+                    db.execute(f'ALTER TABLE calls ADD COLUMN {name} {kind}')
 
-    def reserve(self, amount):
+    def reserve(self, amount, context=None):
         with sqlite3.connect(self.path, timeout=5) as db:
             db.execute('BEGIN IMMEDIATE')
             used = db.execute('SELECT COALESCE(SUM(cny),0) FROM calls').fetchone()[0]
             if used + amount * 1.25 > self.cap:
                 raise TaskStopped('phase_budget_exhausted')
             key = uuid.uuid4().hex
-            db.execute('INSERT INTO calls VALUES (?,?,?,?,?)', (key, amount, 'reserved_unknown_charge', '{}', time.time()))
+            db.execute('INSERT INTO calls (id,cny,status,usage,at,reservation_cny,context) VALUES (?,?,?,?,?,?,?)',
+                       (key, amount, 'reserved_unknown_charge', '{}', time.time(), amount, json.dumps(context or {})))
         return key
+
+    def fail(self, key, reason):
+        with sqlite3.connect(self.path) as db:
+            db.execute('UPDATE calls SET error=? WHERE id=?', (reason, key))
+
+    def records(self):
+        with sqlite3.connect(self.path) as db:
+            db.row_factory = sqlite3.Row
+            return [dict(row) for row in db.execute('SELECT * FROM calls ORDER BY at,id')]
 
     def settle(self, key, usage):
         prompt, output = usage.get('prompt_tokens'), usage.get('completion_tokens')
@@ -92,7 +110,9 @@ class Bailian:
         import httpx
         # Highest published Beijing price band, 256k input and requested output.
         reservation = (262144 * 3 + max_tokens * 30) / 1e6
-        key = self.ledger.reserve(reservation)
+        key = self.ledger.reserve(reservation, getattr(self, 'context', {}))
+        record = {'ledger_id':key, 'reservation_cny':reservation, 'usage':None,
+                  'cost_status':'reserved_unknown_charge', 'max_tokens':max_tokens}
         payload = {'model': MODEL, 'messages': messages, 'temperature': 0,
                    'enable_thinking': False, 'max_tokens': max_tokens, 'stream': False,
                    'vl_high_resolution_images': False}
@@ -112,20 +132,36 @@ class Bailian:
             response = asyncio.run(bounded_request())
             if response.status_code != 200:
                 # Do not include provider response bodies, request headers or images in errors.
+                retry = response.headers.get('Retry-After')
+                if retry:
+                    try:
+                        delay = float(retry)
+                        if math.isfinite(delay):
+                            record['retry_not_before'] = time.time()+max(0., delay)
+                    except ValueError:
+                        try:
+                            record['retry_not_before'] = parsedate_to_datetime(retry).timestamp()
+                        except (ValueError, TypeError, OverflowError, IndexError):
+                            pass
                 raise TaskStopped(f'api_http_{response.status_code}')
-            result = response.json()
-        except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
-            raise TaskStopped('api_timeout') from exc
-        except (httpx.HTTPError, ValueError) as exc:
-            raise TaskStopped('api_transport_or_json_error') from exc
-        usage = result.get('usage', {})
-        cost = self.ledger.settle(key, usage)
-        try:
+            try:
+                result = response.json()
+            except ValueError as exc:
+                raise TaskStopped('api_response_json_error') from exc
+            if not isinstance(result, dict) or not isinstance(result.get('usage'), dict):
+                raise TaskStopped('missing_usage')
+            usage = result['usage']
+            cost = self.ledger.settle(key, usage)
+            record.update(usage=usage, cost_cny=cost, cost_status='estimated_from_usage_not_invoice')
             message = result['choices'][0]['message']
+            if not isinstance(message, dict) or not ('content' in message or 'tool_calls' in message):
+                raise TaskStopped('api_invalid_response')
             message = {k:message[k] for k in ('role','content','tool_calls') if k in message}
-        except (KeyError, IndexError, TypeError) as exc:
-            raise TaskStopped('api_invalid_response') from exc
-        return {'message': message, 'usage': usage, 'cost_cny': cost,
-                'cost_status': 'estimated_from_usage_not_invoice', 'ledger_id': key,
-                'response_model': result.get('model'),
-                'seconds': time.monotonic()-started}
+        except (TaskStopped, httpx.HTTPError, asyncio.TimeoutError, KeyError, IndexError, TypeError) as exc:
+            reason = str(exc) if isinstance(exc, TaskStopped) else (
+                'api_timeout' if isinstance(exc, (httpx.TimeoutException, asyncio.TimeoutError)) else
+                'api_transport_error' if isinstance(exc, httpx.HTTPError) else 'api_invalid_response')
+            record['seconds'] = time.monotonic()-started
+            self.ledger.fail(key, reason)
+            raise TaskStopped(reason, record) from exc
+        return record | {'message':message, 'response_model':result.get('model'), 'seconds':time.monotonic()-started}

@@ -80,20 +80,23 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(result['distinct_pages'],1)
 
     def test_request_limit_and_timeout_return_partial_evidence(self):
-        result=self.run_ask(FakeProvider([tool('read_page',{'page_id':'p1'})]),max_requests=1)
-        self.assertEqual(result['termination_reason'],'request_limit')
-        self.assertEqual(result['distinct_pages'],1)
+        provider=FakeProvider([tool('read_page',{'page_id':'p1'})])
+        result=self.run_ask(provider,max_requests=1)
+        self.assertEqual(result['termination_reason'],'invalid_answer_or_evidence')
+        self.assertIsNone(provider.inputs[0][1])
+        self.assertEqual(result['distinct_pages'],0)
         self.assertFalse(result['completed'])
         result=self.run_ask(FakeProvider([TaskStopped('api_timeout')]))
         self.assertEqual(result['termination_reason'],'api_timeout')
         self.assertFalse(result['cost_complete'])
 
     def test_no_results_and_repeated_search_limits(self):
-        provider=FakeProvider([tool('search_pages',{'query':'energy'})]*4)
+        provider=FakeProvider([tool('search_pages',{'query':'energy'})]*4+[message()])
         result=self.run_ask(provider)
-        self.assertEqual(result['termination_reason'],'search_limit')
+        self.assertEqual(result['termination_reason'],'answered')
         self.assertEqual(result['searches'],3)
-        self.assertTrue(result['trace'][-1]['repeated'])
+        self.assertTrue(result['trace'][-2]['repeated'])
+        self.assertIsNone(provider.inputs[-1][1])
         with patch('foliorecall.agent.retrieve',return_value=([],'[]',{'request_seconds':.001})):
             result=self.run_ask(FakeProvider([message()]),'rag')
         self.assertTrue(result['answer']['insufficient_evidence'])
@@ -109,8 +112,8 @@ class AgentTests(unittest.TestCase):
 
     def test_distinct_page_limit_and_duplicate_read(self):
         self.pages=[dict(self.pages[0],page_id=f'p{i}') for i in range(1,8)]
-        result=self.run_ask(FakeProvider([tool('read_page',{'page_id':f'p{i}'}) for i in range(1,8)]))
-        self.assertEqual(result['termination_reason'],'page_limit')
+        result=self.run_ask(FakeProvider([tool('read_page',{'page_id':f'p{i}'}) for i in range(1,8)]+[message()]))
+        self.assertEqual(result['termination_reason'],'answered')
         self.assertEqual(result['distinct_pages'],6)
         result=self.run_ask(FakeProvider([tool('read_page',{'page_id':'p1'}),tool('read_page',{'page_id':'p1'}),message()]))
         self.assertEqual(result['distinct_pages'],1)
