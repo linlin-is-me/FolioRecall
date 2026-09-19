@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import tempfile
@@ -10,6 +11,24 @@ import tempfile
 def digest(value):
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
                                      separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+
+
+def restart_gap(attempt, first=None):
+    """Derive an observed wall-clock interval without guessing missing elapsed time."""
+    if attempt.get('attempt') != 2:
+        return {'gap_seconds': 0., 'gap_status': 'not_applicable'}
+    started, finished = attempt.get('started_at'), (first or {}).get('finished_at')
+    if started is None or finished is None:
+        return {'gap_seconds': None, 'gap_status': 'missing_timestamp'}
+    if any(type(value) not in (int, float) or not math.isfinite(value)
+           for value in (started, finished)):
+        return {'gap_seconds': None, 'gap_status': 'invalid_timestamp'}
+    seconds = started - finished
+    if not math.isfinite(seconds):
+        return {'gap_seconds': None, 'gap_status': 'nonfinite_interval'}
+    if seconds < 0:
+        return {'gap_seconds': None, 'gap_status': 'wall_clock_rollback'}
+    return {'gap_seconds': seconds, 'gap_status': 'valid'}
 
 
 def atomic_json(path, value):

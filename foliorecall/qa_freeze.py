@@ -86,6 +86,7 @@ def select_repeats(tasks):
 
 
 def freeze_development(selection, reviews, datasets, data_root, output):
+    review_path = str(reviews)
     originals, reviews = read_rows(selection), read_rows(reviews)
     tasks_config = read_json(datasets)['tasks']
     if len(originals)!=40 or len({r['task_id'] for r in originals})!=40:
@@ -122,7 +123,7 @@ def freeze_development(selection, reviews, datasets, data_root, output):
     temporary = output.with_name(output.name+'.preparing')
     if temporary.exists():
         raise ValueError('存在未完成冻结目录，请检查后选择新输出位置')
-    provenance(temporary, {'selection':str(selection), 'reviews':str(reviews), 'datasets':str(datasets),
+    provenance(temporary, {'selection':str(selection), 'reviews':review_path, 'datasets':str(datasets),
                           'source_digest':digest(originals),'review_digest':digest(reviews),
                           'scope':'assistant source review; no API/model execution'})
     repeat_rows, summaries = [], {}

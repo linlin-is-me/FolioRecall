@@ -12,7 +12,7 @@ from foliorecall.agent import ask
 from foliorecall.generation import Bailian, CostLedger, TaskStopped
 from foliorecall.io import read_json
 from foliorecall.qa_runtime import execute_plan, ledger_snapshot, transient, prepare_suite
-from foliorecall.qa_storage import atomic_json, digest, output_lock
+from foliorecall.qa_storage import atomic_json, digest, output_lock, restart_gap
 from foliorecall.qa_translation import translation_identity, validate_translation, cache_translation
 from foliorecall.qa_evaluation import summarize_attempts, RATINGS
 from tests.test_agent import FakeProvider, message, tool
@@ -144,6 +144,37 @@ class RuntimeTests(unittest.TestCase):
         self.execute([job()],lambda *a:broken)
         with self.assertRaises(ValueError):
             execute_plan(self.root/'run',{'version':1},[job()],lambda:(_ for _ in ()).throw(AssertionError()),[self.config],resume=True)
+
+    def test_recovery_records_valid_wait_from_preserved_timestamps(self):
+        with patch('foliorecall.qa_runtime.time.time',return_value=100.):
+            self.execute([job()],lambda *a:result('api_timeout'))
+        with patch('foliorecall.qa_runtime.time.time',return_value=125.):
+            summary=self.execute([job()],lambda *a:result(),resume=True)
+        folder=self.root/'run'/'attempts'/digest(job()['key'])
+        first,second=(read_json(folder/f'attempt-{n:04d}.json') for n in (1,2))
+        self.assertEqual(first['finished_at'],100.)
+        self.assertEqual(second['started_at'],125.)
+        self.assertEqual(second['gap_seconds'],25.)
+        self.assertEqual(second['gap_status'],'valid')
+        self.assertEqual(summary['recovery']['manual_restart_gap_seconds'],25.)
+        self.assertEqual(summary['recovery']['manual_restart_gap_unknown_count'],0)
+
+    def test_recovery_wall_clock_rollback_is_unknown_not_zero(self):
+        with patch('foliorecall.qa_runtime.time.time',return_value=100.):
+            self.execute([job()],lambda *a:result('api_timeout'))
+        with patch('foliorecall.qa_runtime.time.time',return_value=90.):
+            summary=self.execute([job()],lambda *a:result(),resume=True)
+        folder=self.root/'run'/'attempts'/digest(job()['key'])
+        first,second=(read_json(folder/f'attempt-{n:04d}.json') for n in (1,2))
+        self.assertEqual(first['finished_at'],100.)
+        self.assertEqual(second['started_at'],90.)
+        self.assertEqual(second['gap_status'],'wall_clock_rollback')
+        self.assertIsNone(second['gap_seconds'])
+        self.assertIsNone(summary['recovery']['manual_restart_gap_seconds'])
+        self.assertEqual(summary['recovery']['manual_restart_gap_unknown_count'],1)
+        self.assertEqual(summary['primary']['completed'],0)
+        self.assertEqual(summary['recovery']['completed'],1)
+        self.assertEqual(summary['recovery']['total_actual_task_seconds'],1)
 
 
 class BudgetAndProviderTests(unittest.TestCase):
@@ -340,3 +371,47 @@ class ScoringTests(unittest.TestCase):
         with self.assertRaises(ValueError):summarize_attempts([row],1,[bad])
         row['result']['answer']['unresolved']=['changed after run']
         with self.assertRaises(ValueError):summarize_attempts([row],1,[review])
+
+    def test_legacy_gaps_recomputed_without_mutating_attempts(self):
+        first,second=self.row(1),self.row(2)
+        first['finished_at']=100.
+        second.update(started_at=125.,gap_seconds=-99.)
+        before=deepcopy([first,second])
+        out=summarize_attempts([first,second],1)
+        self.assertEqual(out['recovery']['manual_restart_gap_seconds'],25.)
+        self.assertEqual(out['recovery_intervals'][0]['gap_status'],'valid')
+        self.assertEqual([first,second],before)
+
+        second.update(started_at=90.,gap_seconds=-10.)
+        out=summarize_attempts([first,second],1)
+        self.assertIsNone(out['recovery']['manual_restart_gap_seconds'])
+        self.assertEqual(out['recovery_intervals'][0]['gap_status'],'wall_clock_rollback')
+        self.assertEqual(second['gap_seconds'],-10.)
+
+    def test_partial_restart_total_separates_known_and_missing(self):
+        rows=[]
+        for n,started in enumerate((125.,None)):
+            first,second=self.row(1),self.row(2)
+            first['key']=second['key']=job(n)['key']
+            first['finished_at']=100.
+            second.update(started_at=started,gap_seconds=0.)
+            rows.extend([first,second])
+        out=summarize_attempts(rows,2)
+        self.assertIsNone(out['recovery']['manual_restart_gap_seconds'])
+        self.assertEqual(out['recovery']['manual_restart_gap_known_seconds'],25.)
+        self.assertEqual(out['recovery']['manual_restart_gap_unknown_count'],1)
+        self.assertEqual(out['recovery']['manual_restart_gap_status_counts'],
+                         {'missing_timestamp':1,'valid':1})
+        self.assertEqual(out['primary']['completed'],0)
+        self.assertEqual(out['recovery']['completed'],2)
+
+    def test_missing_or_nonfinite_restart_timestamps_are_unknown(self):
+        for second,first,status in (
+                ({'attempt':2},{'finished_at':100.},'missing_timestamp'),
+                ({'attempt':2,'started_at':125.},{},'missing_timestamp'),
+                ({'attempt':2,'started_at':float('nan')},{'finished_at':100.},'invalid_timestamp'),
+                ({'attempt':2,'started_at':125.},{'finished_at':float('inf')},'invalid_timestamp'),
+                ({'attempt':2,'started_at':True},{'finished_at':100.},'invalid_timestamp'),
+                ({'attempt':2,'started_at':1e308},{'finished_at':-1e308},'nonfinite_interval')):
+            with self.subTest(status=status,second=second,first=first):
+                self.assertEqual(restart_gap(second,first),{'gap_seconds':None,'gap_status':status})

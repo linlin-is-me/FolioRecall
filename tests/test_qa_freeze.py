@@ -57,6 +57,7 @@ class FreezeTests(unittest.TestCase):
             write_json(root/'datasets.json',{'tasks':specs})
             def freeze(out):return freeze_development(root/'selection.jsonl',root/'reviews.jsonl',root/'datasets.json',data,root/out)
             result=freeze('frozen'); self.assertEqual(result['tasks'],40)
+            self.assertEqual(read_json(root/'frozen/run.json')['config']['reviews'],str(root/'reviews.jsonl'))
             self.assertEqual(len(read_json(root/'frozen/repeat-tasks.json')['tasks']),10)
             for d in specs:
                 name=d['name'];pages=read_rows(data/name/'pages.jsonl');tasks=root/'frozen'/name/'tasks.jsonl'
@@ -77,3 +78,14 @@ class FreezeTests(unittest.TestCase):
         rows=[{'task_id':str(n),'category':c,'answerability':'complete'} for n,c in
               [(2,'single_page'),(10,'single_page'),(3,'chart'),(4,'numeric'),(5,'multi_page')]]
         self.assertEqual([r['task_id'] for r in select_repeats(rows)],['10','5'])
+
+    def test_background_notes_are_not_required_facts(self):
+        original,review=fixture()
+        review['background_notes']=[{'text':'Unrequested background detail.',
+                                    'page_ids':['1'],'location':'table footnote',
+                                    'required_for_coverage':False}]
+        row=reviewed_task(original,review,[{'page_id':'1'}])
+        self.assertEqual(row['reference_facts'],['The figure is five.'])
+        self.assertEqual(row['rubric']['answer_coverage']['required_fact_indices'],[0])
+        self.assertEqual(row['background_notes'],review['background_notes'])
+        self.assertEqual(row['upstream'],original)

@@ -78,7 +78,7 @@ def summarize_runs(rows, reviews=None):
 
 def summarize_attempts(attempts, planned, reviews=None, planned_keys=None, ledger_records=None):
     """First attempts remain the primary sample; recovery is a separate stratum."""
-    from .qa_storage import digest
+    from .qa_storage import digest, restart_gap
     keys = [(digest(a['key']),a['attempt']) for a in attempts]
     if len(keys) != len(set(keys)):
         raise ValueError('重复运行键及尝试号')
@@ -94,6 +94,9 @@ def summarize_attempts(attempts, planned, reviews=None, planned_keys=None, ledge
         if a['attempt']==2 and (digest(a['key']),1) not in keys:
             raise ValueError('补跑记录缺少首次尝试')
     lookup = {key:a for key,a in zip(keys,attempts)}
+    # Recompute from preserved timestamps, including records written by older code.
+    # A historical negative or missing gap must not become a zero-duration wait.
+    gaps = {key:restart_gap(a,lookup.get((key[0],1))) for key,a in lookup.items()}
     seen, accepted = set(), []
     for review in reviews or []:
         key = (digest(review['key']),review['attempt'])
@@ -126,12 +129,19 @@ def summarize_attempts(attempts, planned, reviews=None, planned_keys=None, ledge
     def aggregate(rows):
         finished = [a for a in rows if a.get('state')=='finished']
         success = sum(a['result']['completed'] for a in finished)
+        intervals = [gaps[(digest(a['key']),a['attempt'])] for a in rows if a['attempt']==2]
+        known_gap = sum(g['gap_seconds'] for g in intervals if g['gap_seconds'] is not None)
+        unknown_gaps = sum(g['gap_seconds'] is None for g in intervals)
         return {'attempted':len(rows),'finished':len(finished),'completed':success,
                 'completion_rate':success/len(rows) if rows else None,
                 'incomplete_budget':len(rows)-len(finished),
                 'mean_task_seconds':sum(a['result']['timing']['task_seconds'] for a in finished)/len(finished) if finished else None,
                 'total_actual_task_seconds':sum(a['result']['timing']['task_seconds'] for a in finished),
-                'manual_restart_gap_seconds':sum(a.get('gap_seconds',0) for a in finished),
+                'manual_restart_gap_seconds':None if unknown_gaps else known_gap,
+                'manual_restart_gap_known_seconds':known_gap,
+                'manual_restart_gap_unknown_count':unknown_gaps,
+                'manual_restart_gap_status_counts':{status:sum(g['gap_status']==status for g in intervals)
+                    for status in sorted({g['gap_status'] for g in intervals})},
                 'known_cost_cny':sum(a['result'].get('estimated_cost_cny',0) for a in finished)}
     groups = {}
     for a in first:
@@ -180,6 +190,8 @@ def summarize_attempts(attempts, planned, reviews=None, planned_keys=None, ledge
             'by_condition_domain_language':{k:aggregate(v)|{'planned':planned_groups.get(k),
                   'pending':planned_groups[k]-len(v) if k in planned_groups else None} for k,v in groups.items()},
             'primary_language_pairs':list(pairs.values()),
+            'recovery_intervals':[{'key':a['key'],'attempt':2,**gaps[(digest(a['key']),2)]}
+                                  for a in recovery],
             'semantic_reviews':semantic,'semantic_quality_status':'reviewed_subset_only' if accepted else 'pending_review',
             'all_attempts_known_cost_cny':sum(c.get('cost_cny',0) for c in calls.values()),
             'unknown_reservation_cny':sum(c.get('reservation_cny',0) for c in calls.values() if c.get('cost_status')=='reserved_unknown_charge'),

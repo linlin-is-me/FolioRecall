@@ -6,7 +6,7 @@ import time
 import uuid
 
 from .io import read_json, read_rows, provenance
-from .qa_storage import atomic_json, digest, output_lock
+from .qa_storage import atomic_json, digest, output_lock, restart_gap
 
 
 def transient(reason):
@@ -270,6 +270,7 @@ def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_af
             if executor is None:
                 executor = factory()
             record = {'key':job['key'],'task':job.get('task',{}),'attempt':attempt,'state':'running','started_at':time.time()}
+            record.update(restart_gap(record,first))
             path = folder/f'attempt-{attempt:04d}.json'
             if path.exists():
                 raise ValueError('拒绝覆盖已有尝试')
@@ -284,7 +285,7 @@ def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_af
                 stopped, execution_error = 'incomplete_budget', exc
                 break
             record.update(state='finished',finished_at=time.time(),result=result,
-                          answer_digest=digest(result['answer']), gap_seconds=record['started_at']-first['finished_at'] if first else 0.)
+                          answer_digest=digest(result['answer']))
             atomic_json(path,record)
             all_attempts.append(record)
             new += 1
