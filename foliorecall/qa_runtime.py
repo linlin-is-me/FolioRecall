@@ -92,6 +92,24 @@ def prepare_unit(spec, repeats=1, task_ids=None, suite_id='standalone', conditio
             'agent':agent,'retrieval_config':retrieval,'texts':texts}
 
 
+def suite_jobs(units, manifest):
+    """Optional full permutation; retain unit IDs used by the resident model."""
+    jobs = [j for u in units for j in u['jobs']]
+    cooldown = manifest.get('inter_task_cooldown_seconds',0)
+    if type(cooldown) not in (int,float) or not math.isfinite(cooldown) or cooldown < 0:
+        raise ValueError('任务间冷却时间必须是非负有限秒数')
+    if 'job_order' not in manifest:
+        return jobs
+    order = manifest['job_order']
+    if not isinstance(order,list) or any(not isinstance(k,dict) for k in order):
+        raise ValueError('job_order 必须为完整运行键数组')
+    lookup = {digest(j['key']):j for j in jobs}
+    keys = [digest(k) for k in order]
+    if len(keys)!=len(jobs) or len(set(keys))!=len(keys) or set(keys)!=set(lookup):
+        raise ValueError('job_order 必须无重复地覆盖全部运行键')
+    return [lookup[k] for k in keys]
+
+
 def prepare_suite(path, translation_cache=None):
     manifest = read_json(path)
     if manifest.get('conditions') != ['visual-rag','hybrid-rag','hybrid-agent']:
@@ -123,6 +141,7 @@ def prepare_suite(path, translation_cache=None):
             units.append(unit)
     if not units or any(u['student'] != units[0]['student'] or u['agent'] != units[0]['agent'] for u in units):
         raise ValueError('串行套件的查询模型与生成配置必须一致')
+    suite_jobs(units,manifest)  # Validate the execution policy before loading models/providers.
     return units, {'suite':manifest,'selection':selection,'units':[u['identity'] for u in units]}
 
 
@@ -207,6 +226,30 @@ def ledger_snapshot(configs, execution_id):
             'scope':'estimated usage and conservative reservations; not invoice charges'}
 
 
+def wait_for_cooldown(last_finished, seconds, started, max_seconds):
+    """Batch waiting is outside ask(); wall-clock anomalies never grant a reset."""
+    begin, wall = time.monotonic(), time.time()
+    if not seconds or last_finished is None:
+        return 0., None
+    if (type(last_finished) not in (int,float) or not math.isfinite(last_finished)
+            or last_finished > wall):
+        return 0., 'cooldown_clock_unknown'
+    delay = max(0.,last_finished+seconds-wall)
+    if max_seconds is not None and begin-started+delay >= max_seconds:
+        return 0., 'max_seconds'
+    while time.monotonic()-begin < delay:
+        elapsed = time.monotonic()-begin
+        if abs((time.time()-wall)-elapsed) > 1.:
+            return elapsed, 'cooldown_clock_unknown'
+        if max_seconds is not None and time.monotonic()-started >= max_seconds:
+            return elapsed, 'max_seconds'
+        time.sleep(max(0.,min(1.,delay-elapsed)))
+    elapsed = time.monotonic()-begin
+    if abs((time.time()-wall)-elapsed) > 1.:
+        return elapsed, 'cooldown_clock_unknown'
+    return elapsed, None
+
+
 def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_after=None, max_seconds=None,
                  dry_run=False, command_started=None):
     if stop_after is not None and (type(stop_after) is not int or stop_after < 1):
@@ -215,6 +258,12 @@ def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_af
         raise ValueError('max-seconds 必须为正数')
     if len({digest(j['key']) for j in jobs}) != len(jobs):
         raise ValueError('重复运行键')
+    policy = identity.get('suite',{})
+    cooldown = policy.get('inter_task_cooldown_seconds',0)
+    if type(cooldown) not in (int,float) or not math.isfinite(cooldown) or cooldown < 0:
+        raise ValueError('任务间冷却时间必须是非负有限秒数')
+    if 'job_order' in policy and policy['job_order'] != [j['key'] for j in jobs]:
+        raise ValueError('执行顺序与套件身份不一致')
     if dry_run:
         return {'dry_run':True,'planned':len(jobs),'keys':[j['key'] for j in jobs],'stopped':None}
     output = Path(output)
@@ -259,6 +308,11 @@ def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_af
         segment = output/'segments'/uuid.uuid4().hex
         provenance(segment,{'identity_digest':signature,'resume':resume,'stop_after':stop_after,'max_seconds':max_seconds})
         new, stopped, executor, execution_error = 0, None, None, None
+        cooldown_waits = []
+        finished = [a.get('finished_at') for a in all_attempts if a['state']=='finished']
+        if cooldown and any(type(t) not in (int,float) or not math.isfinite(t) for t in finished):
+            raise ValueError('缺少有效结束时间，不能推测冷却间隔')
+        last_finished = max(finished) if finished and cooldown else None
         for job,folder,attempt,first in pending:
             if stop_after is not None and new >= stop_after:
                 stopped = 'stop_after'; break
@@ -267,9 +321,15 @@ def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_af
             waiting = (first or {}).get('result',{}).get('failure',{}).get('retry_not_before',0)
             if waiting > time.time():
                 stopped = 'retry_after'; break
+            waited, stop = wait_for_cooldown(last_finished,cooldown,started,max_seconds)
+            cooldown_waits.append({'key':job['key'],'attempt':attempt,'seconds':waited,
+                                   'previous_finished_at':last_finished,'stopped':stop})
+            if stop:
+                stopped = stop; break
             if executor is None:
                 executor = factory()
-            record = {'key':job['key'],'task':job.get('task',{}),'attempt':attempt,'state':'running','started_at':time.time()}
+            record = {'key':job['key'],'task':job.get('task',{}),'attempt':attempt,'state':'running',
+                      'started_at':time.time(),'cooldown_seconds':waited}
             record.update(restart_gap(record,first))
             path = folder/f'attempt-{attempt:04d}.json'
             if path.exists():
@@ -286,6 +346,7 @@ def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_af
                 break
             record.update(state='finished',finished_at=time.time(),result=result,
                           answer_digest=digest(result['answer']))
+            last_finished = record['finished_at']
             atomic_json(path,record)
             all_attempts.append(record)
             new += 1
@@ -299,6 +360,7 @@ def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_af
             stopped = stopped or 'incomplete_budget'
         summary['ledger'] = ledger
         summary.update(stopped=stopped, attempts_new=new, segment_seconds=time.monotonic()-started)
+        summary.update(cooldown_seconds=sum(w['seconds'] for w in cooldown_waits),cooldown_waits=cooldown_waits)
         atomic_json(output/'summary.json',summary)
         atomic_json(segment/'result.json',summary)
         if execution_error is not None:

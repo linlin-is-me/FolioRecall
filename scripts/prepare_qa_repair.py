@@ -7,7 +7,7 @@ import sqlite3
 from foliorecall.agent import ANSWER_RULES, answer_contract
 from foliorecall.generation import read_agent_config
 from foliorecall.io import read_json, provenance
-from foliorecall.qa_runtime import prepare_suite
+from foliorecall.qa_runtime import prepare_suite, suite_jobs
 from foliorecall.qa_storage import atomic_json
 
 
@@ -30,7 +30,7 @@ def repair_configuration(source, output, calls, suite_id='qa-pilot-repair-v1'):
     return agent,suite,snapshot
 
 
-def prepare(source, output, suite_id='qa-pilot-repair-v1', previous_run=None):
+def prepare(source, output, suite_id='qa-pilot-repair-v1', previous_run=None, execution_policy=None):
     source, output = Path(source), Path(output)
     if output.exists():
         raise ValueError('修复目录已存在，拒绝覆盖或重置预算')
@@ -47,6 +47,17 @@ def prepare(source, output, suite_id='qa-pilot-repair-v1', previous_run=None):
         db.row_factory = sqlite3.Row
         calls = [dict(r) for r in db.execute('SELECT * FROM calls ORDER BY at,id')]
     agent,suite,snapshot = repair_configuration(source,output,calls,suite_id)
+    if execution_policy is not None:
+        policy = read_json(execution_policy)
+        if not isinstance(policy,dict) or set(policy)-{'job_order','inter_task_cooldown_seconds'}:
+            raise ValueError('执行策略仅允许 job_order 和 inter_task_cooldown_seconds')
+        suite.update(policy)
+    # Preflight the actual corpus and policy before writing a new candidate directory.
+    source_units,_ = prepare_suite(source/'suite.json',cache)
+    for unit in source_units:
+        for job in unit['jobs']:
+            job['key']['suite'] = suite_id
+    expected_jobs = suite_jobs(source_units,suite)
     provenance(output/'preparation',{'source':str(source),'scope':'A3 repair, same 12 jobs; no new translation or GPU',
         'translation_cache':str(cache),'absolute_cap_cny':agent['phase_budget_cny']})
     atomic_json(output/'agent.json',agent)
@@ -61,18 +72,21 @@ def prepare(source, output, suite_id='qa-pilot-repair-v1', previous_run=None):
         'answer_finalization':'separate_tool_decision_and_final_answer',
         'translation_cost_scope':'historical allocation only; excluded from new spend',
         'answer_rules':ANSWER_RULES,'contracts':{s:answer_contract(q)[1] for s,q in [('en','Question'),('zh','问题')]},
-        'selection':'same previously observed tasks and ordering; no new unseen evaluation',
-        'changes':['one no-tools final answer within existing budget','supported claims separate from unresolved',
-                   'request phase and final transition records'],
+        'selection':'same previously observed tasks; execution order recorded explicitly, not unseen evaluation',
+        'execution_policy':{k:suite[k] for k in ('job_order','inter_task_cooldown_seconds') if k in suite},
+        'changes':['explicit current-attempt read-page citation permissions','sanitized HTTP error whitelist',
+                   'optional fixed task order and inter-attempt cooldown'],
         'A4_started':False,'GPU':False})
     units,identity = prepare_suite(output/'suite.json',cache)
-    jobs = [j for u in units for j in u['jobs']]
-    assert len(jobs)==12 and [j['key']['language'] for j in jobs]==['en','zh']*6
+    jobs = suite_jobs(units,suite)
+    assert len(jobs)==12 and sum(j['key']['language']=='zh' for j in jobs)==6
+    assert [j['key'] for j in jobs]==[j['key'] for j in expected_jobs]
     assert [(d['name'],d['task_ids']) for d in suite['domains']]==[('hr',['hr:0']),('finance_en',['finance_en:1'])]
     assert all(u['student']['device']=='cpu' and u['agent']['ledger']==str(ledger) for u in units)
     assert all(j['translation'] for j in jobs if j['key']['language']=='zh')
     result={'passed':True,'planned':12,'cache_hits':6,'absolute_cap_cny':agent['phase_budget_cny'],
-            'occupied_cny':snapshot['occupied_cny'],'new_translation_calls':0,'identity':identity}
+            'occupied_cny':snapshot['occupied_cny'],'new_translation_calls':0,'identity':identity,
+            'job_keys':[j['key'] for j in jobs]}
     atomic_json(output/'preflight.json',result)
     return {k:v for k,v in result.items() if k!='identity'}
 
@@ -83,5 +97,6 @@ if __name__=='__main__':
     p.add_argument('--output',required=True)
     p.add_argument('--suite-id',default='qa-pilot-repair-v1')
     p.add_argument('--previous-run')
+    p.add_argument('--execution-policy')
     a=p.parse_args()
-    print(prepare(a.source,a.output,a.suite_id,a.previous_run))
+    print(prepare(a.source,a.output,a.suite_id,a.previous_run,a.execution_policy))

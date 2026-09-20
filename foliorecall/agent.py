@@ -3,12 +3,11 @@ import base64
 import io
 import json
 import math
-import os
 from pathlib import Path
 import re
 import time
 
-from .generation import TaskStopped, validate_agent_config
+from .generation import TaskStopped, validate_agent_config, diagnostic_text
 from .query import retrieve
 from .qa_translation import convert_query, validate_translation
 
@@ -53,26 +52,17 @@ class AnswerValidationError(ValueError):
         self.code, self.path = code, path
 
 
-def diagnostic_text(content, secret=None):
-    """Bound only visible output; never serialize the enclosing provider response."""
-    if not isinstance(content, str):
-        return {'content_type':type(content).__name__, 'text':None,
-                'original_length':None, 'truncated':False}
-    value = content
-    for key in (secret, os.environ.get('DASHSCOPE_API_KEY')):
-        if key:
-            value = value.replace(key, '[REDACTED]')
-            value = value.replace(json.dumps(key)[1:-1], '[REDACTED]')
-    value = re.sub(r'<think\b[^>]*>.*?(?:</think>|$)', '[REDACTED_REASONING]', value, flags=re.I|re.S)
-    value = re.sub(r'"reasoning_content"\s*:\s*"(?:\\.|[^"\\])*"',
-                   '"reasoning_content":"[REDACTED]"', value, flags=re.I)
-    value = re.sub(r'data:[^\s"\']*;base64,[A-Za-z0-9+/=\s]+', '[REDACTED_IMAGE]', value, flags=re.I)
-    value = re.sub(r'\b[A-Za-z0-9+/]{256,}={0,2}', '[REDACTED_ENCODED_DATA]', value)
-    value = re.sub(r'(?i)\bsk-[A-Za-z0-9_.\\-]+', '[REDACTED_KEY]', value)
-    value = re.sub(r'(?i)\bBearer\s+[^\s"\']+', 'Bearer [REDACTED]', value)
-    value = re.sub(r'(?im)\bAuthorization\s*:[^\r\n]*', 'Authorization: [REDACTED]', value)
-    return {'content_type':'str','text':value[:32768], 'original_length':len(content),
-            'sanitized_length':len(value),'truncated':len(value)>32768}
+def final_answer_contract(contract, read_ids):
+    """Only this attempt's successfully read IDs grant citation permission."""
+    allowed = sorted(read_ids)
+    return (contract + '\nCitation permissions supplied by the application: '
+        'page_number is a physical page number, never a substitute for page_id. '
+        'Search results and snippets are candidates, not pages already read. '
+        'Copy each citation exactly from allowed_evidence_page_ids below; do not cite any other ID. '
+        'The list only grants citation permission: the page must also support the claim. '
+        'Put unsupported or missing parts exclusively in unresolved, not in claims with empty citations. '
+        'If the list is empty, return claims=[], insufficient_evidence=true and explain missing evidence in unresolved. '
+        '\nallowed_evidence_page_ids=' + json.dumps(allowed, ensure_ascii=False))
 
 
 def read_evidence(page, max_pixels):
@@ -288,7 +278,9 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
             for item in candidates[:agent_config['max_pages']]:
                 result, image = read_page(item['page_id'])
                 messages.append({'role':'user','content':[{'type':'text','text':'UNTRUSTED PAGE EVIDENCE\n'+json.dumps(result,ensure_ascii=False)}, image]})
-            messages.append({'role':'system','content':contract})
+            messages.append({'role':'system','content':final_answer_contract(contract,read)})
+            trace.append({'event':'final_answer','status':'started','reason':'fixed_rag',
+                          'source_request_sequence':requests,'allowed_evidence_page_ids':sorted(read)})
             response = generate(messages)
             answer = parse_answer(response)
             reason = 'answered'
@@ -301,11 +293,12 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
                              'distinct_pages':agent_config['max_pages']-len(cumulative_pages)}
                 final = force_final or remaining['requests'] <= 1 or remaining['output_tokens'] <= 1024 or (remaining['searches'] <= 0 and remaining['distinct_pages'] <= 0)
                 messages.append({'role':'system','content':'Remaining budgets: '+json.dumps(remaining)+
-                                 ('. Return the final answer JSON now using evidence already read; no tools.' if final else '. Reserve the final request for the answer.')+' '+contract})
+                                 ('. Return the final answer JSON now using evidence already read; no tools.' if final else '. Reserve the final request for the answer.')+' '+
+                                 (final_answer_contract(contract,read) if final else contract)})
                 if final:
                     trace.append({'event':'final_answer','status':'started',
                                   'reason':'natural_no_tool' if force_final == 'natural_no_tool' else 'resource_limit',
-                                  'source_request_sequence':requests})
+                                  'source_request_sequence':requests,'allowed_evidence_page_ids':sorted(read)})
                 response = generate(messages, None if final else TOOLS,
                                     phase='final_answer' if final else 'tool_decision')
                 tool_calls = response.get('tool_calls')

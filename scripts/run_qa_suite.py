@@ -2,7 +2,7 @@
 import argparse
 import json
 import time
-from foliorecall.qa_runtime import prepare_suite, execute_plan, provider_factory
+from foliorecall.qa_runtime import prepare_suite, execute_plan, provider_factory, suite_jobs
 
 
 def main():
@@ -17,7 +17,7 @@ def main():
     p.add_argument('--max-seconds',type=float)
     a = p.parse_args()
     units, identity = prepare_suite(a.suite,a.translation_cache)
-    result = execute_plan(a.output,identity,[j for u in units for j in u['jobs']],lambda:provider_factory(units),
+    result = execute_plan(a.output,identity,suite_jobs(units,identity['suite']),lambda:provider_factory(units),
         [u['agent'] for u in units],a.resume,a.stop_after,a.max_seconds,a.dry_run,started)
     print(json.dumps(result,ensure_ascii=False,indent=2))
     return 0 if result['stopped'] is None else 75

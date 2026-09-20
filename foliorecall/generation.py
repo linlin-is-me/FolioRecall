@@ -3,6 +3,7 @@ import json
 import math
 import asyncio
 import os
+import re
 from pathlib import Path
 import sqlite3
 import time
@@ -11,6 +12,56 @@ import uuid
 from email.utils import parsedate_to_datetime
 
 MODEL = 'qwen3-vl-plus-2025-12-19'
+
+
+def diagnostic_text(content, secret=None, limit=32768):
+    """Bound only visible output; never serialize the enclosing provider response."""
+    if not isinstance(content, str):
+        return {'content_type':type(content).__name__, 'text':None,
+                'original_length':None, 'truncated':False}
+    value = content
+    for key in (secret, os.environ.get('DASHSCOPE_API_KEY')):
+        if key:
+            value = value.replace(key, '[REDACTED]')
+            value = value.replace(json.dumps(key)[1:-1], '[REDACTED]')
+    value = re.sub(r'<think\b[^>]*>.*?(?:</think>|$)', '[REDACTED_REASONING]', value, flags=re.I|re.S)
+    value = re.sub(r'"reasoning_content"\s*:\s*"(?:\\.|[^"\\])*"',
+                   '"reasoning_content":"[REDACTED]"', value, flags=re.I)
+    value = re.sub(r'data:[^\s"\']*;base64,[A-Za-z0-9+/=\s]+', '[REDACTED_IMAGE]', value, flags=re.I)
+    value = re.sub(r'\b[A-Za-z0-9+/]{256,}={0,2}', '[REDACTED_ENCODED_DATA]', value)
+    value = re.sub(r'(?i)\bsk-[A-Za-z0-9_.\\-]+', '[REDACTED_KEY]', value)
+    value = re.sub(r'(?i)\bBearer\s+[^\s"\']+', 'Bearer [REDACTED]', value)
+    value = re.sub(r'(?im)\bAuthorization\s*:[^\r\n]*', 'Authorization: [REDACTED]', value)
+    return {'content_type':'str','text':value[:limit], 'original_length':len(content),
+            'sanitized_length':len(value),'truncated':len(value)>limit}
+
+
+def http_error_diagnostic(response, secret):
+    """Keep a small error-field whitelist, never raw bodies or request headers."""
+    out = {'http_status':response.status_code,
+           'content_type':diagnostic_text(response.headers.get('content-type',''), secret, 128)['text']}
+    try:
+        body = response.json()
+    except ValueError:
+        return out
+    if not isinstance(body,dict):
+        return out
+    error = body.get('error',body)
+    if isinstance(error,dict):
+        for name in ('code','type','message'):
+            if isinstance(error.get(name),str):
+                limit = 2048 if name == 'message' else 256
+                value = diagnostic_text(error[name],secret,limit)
+                out[name] = value['text']
+                if name == 'message':
+                    out['message_original_length'] = value['original_length']
+                    out['message_truncated'] = value['truncated']
+    request_id = body.get('request_id')
+    if not isinstance(request_id,str) and isinstance(error,dict):
+        request_id = error.get('request_id')
+    if isinstance(request_id,str):
+        out['request_id'] = diagnostic_text(request_id,secret,256)['text']
+    return out
 
 
 class TaskStopped(RuntimeError):
@@ -131,7 +182,7 @@ class Bailian:
         try:
             response = asyncio.run(bounded_request())
             if response.status_code != 200:
-                # Do not include provider response bodies, request headers or images in errors.
+                record['http_diagnostic'] = http_error_diagnostic(response,self.key)
                 retry = response.headers.get('Retry-After')
                 if retry:
                     try:
