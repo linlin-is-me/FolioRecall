@@ -51,22 +51,23 @@ class AgentTests(unittest.TestCase):
 
     def test_agent_reads_then_cites_and_never_logs_base64_or_cot(self):
         provider=FakeProvider([tool('search_pages',{'query':'energy'}),tool('read_page',{'page_id':'p1'}),
+                               {'content':'Finished gathering.'},
                                message([{'text':'42','evidence_page_ids':['p1']}])])
         result=self.run_ask(provider)
         self.assertTrue(result['completed'])
         self.assertEqual(result['distinct_pages'],1)
-        self.assertEqual(result['model_requests'],3)
+        self.assertEqual(result['model_requests'],4)
         self.assertNotIn('base64',json.dumps(result))
         self.assertEqual(provider.inputs[-1][0][0]['content'],ANSWER_RULES)
         self.assertEqual([t['function']['name'] for t in provider.inputs[0][1]],['search_pages','read_page'])
 
     def test_unread_citation_rejected(self):
-        result=self.run_ask(FakeProvider([message([{'text':'x','evidence_page_ids':['p1']}])]))
+        result=self.run_ask(FakeProvider([message([{'text':'x','evidence_page_ids':['p1']}])]),max_requests=1)
         self.assertFalse(result['completed'])
         self.assertEqual(result['answer']['claims'],[])
 
     def test_unknown_tool_path_and_unknown_page_do_not_execute(self):
-        provider=FakeProvider([tool('read_page',{'page_id':'/etc/passwd'}),tool('shell',{'command':'anything'}),message()])
+        provider=FakeProvider([tool('read_page',{'page_id':'/etc/passwd'}),tool('shell',{'command':'anything'}),message(),message()])
         result=self.run_ask(provider)
         self.assertEqual(result['distinct_pages'],0)
         self.assertEqual(len([r for r in result['trace'] if r['status']=='error']),2)
@@ -95,7 +96,7 @@ class AgentTests(unittest.TestCase):
         result=self.run_ask(provider)
         self.assertEqual(result['termination_reason'],'answered')
         self.assertEqual(result['searches'],3)
-        self.assertTrue(result['trace'][-2]['repeated'])
+        self.assertTrue(any(t.get('repeated') for t in result['trace']))
         self.assertIsNone(provider.inputs[-1][1])
         with patch('foliorecall.agent.retrieve',return_value=([],'[]',{'request_seconds':.001})):
             result=self.run_ask(FakeProvider([message()]),'rag')
@@ -115,7 +116,7 @@ class AgentTests(unittest.TestCase):
         result=self.run_ask(FakeProvider([tool('read_page',{'page_id':f'p{i}'}) for i in range(1,8)]+[message()]))
         self.assertEqual(result['termination_reason'],'answered')
         self.assertEqual(result['distinct_pages'],6)
-        result=self.run_ask(FakeProvider([tool('read_page',{'page_id':'p1'}),tool('read_page',{'page_id':'p1'}),message()]))
+        result=self.run_ask(FakeProvider([tool('read_page',{'page_id':'p1'}),tool('read_page',{'page_id':'p1'}),message(),message()]))
         self.assertEqual(result['distinct_pages'],1)
         self.assertEqual(result['trace'][1]['status'],'already_read')
 

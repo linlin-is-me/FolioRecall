@@ -210,7 +210,7 @@ class BudgetAndProviderTests(unittest.TestCase):
             self.assertEqual(self.ask(p,budget=limited)['termination_reason'],reason)
             self.assertEqual(p.inputs,[])
         # Old evidence must be read again in this attempt before it can be cited.
-        p=FakeProvider([message([{'text':'42','evidence_page_ids':['p1']}])])
+        p=FakeProvider([message(),message([{'text':'42','evidence_page_ids':['p1']}])])
         self.assertFalse(self.ask(p,mode='agent',budget=b)['completed'])
 
     def test_final_request_and_1024_tokens_reserved(self):
@@ -306,7 +306,7 @@ class BudgetAndProviderTests(unittest.TestCase):
         r=self.ask(p,mode='agent',budget=b)
         self.assertEqual(len(r['budget_state']['distinct_page_ids']),6)
         self.assertEqual(r['distinct_pages'],0);self.assertIsNone(p.inputs[-1][1])
-        p=FakeProvider([tool('read_page',{'page_id':'p1'}),message([{'text':'42','evidence_page_ids':['p1']}])])
+        p=FakeProvider([tool('read_page',{'page_id':'p1'}),message(),message([{'text':'42','evidence_page_ids':['p1']}])])
         r=self.ask(p,mode='agent',budget=b)
         self.assertTrue(r['completed']);self.assertEqual(r['distinct_pages'],1)
         self.assertEqual(len(r['budget_state']['distinct_page_ids']),6)
@@ -317,7 +317,7 @@ class BudgetAndProviderTests(unittest.TestCase):
             responses=[]
             if j['key']['language']=='zh':responses.append({'content':'{"query":"What?"}'})
             agent=j['key']['condition']=='hybrid-agent'
-            if agent:responses.extend([tool('search_pages',{'query':'What?'}),tool('read_page',{'page_id':'p1'})])
+            if agent:responses.extend([tool('search_pages',{'query':'What?'}),tool('read_page',{'page_id':'p1'}),message()])
             responses.append(message([{'text':'42','evidence_page_ids':['p1']}]))
             return self.ask(FakeProvider(responses),'agent' if agent else 'rag',j['question'],budget=b)
         summary=execute_plan(self.root/'suite',{'mock':True},jobs,lambda:execute,[self.config])

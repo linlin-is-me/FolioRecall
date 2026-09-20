@@ -72,7 +72,7 @@ class OutputTests(unittest.TestCase):
         self.assertFalse(transient(z['termination_reason']))
 
     def test_agent_validation_and_nontext_content(self):
-        z=self.run_ask(FakeProvider([message([{'text':'x','evidence_page_ids':['p1']}])]))
+        z=self.run_ask(FakeProvider([message([{'text':'x','evidence_page_ids':['p1']}])]),max_requests=1)
         self.assertEqual(z['failure']['output_diagnostic']['code'],'unread_citation')
         z=self.run_ask(FakeProvider([{'content':{'reasoning_content':'secret'}}]),'rag')
         d=z['failure']['output_diagnostic']

@@ -36,6 +36,13 @@ def answer_contract(question):
         'the English retrieval query is only for searching, not a request to answer in English. '
         'Keep JSON keys unchanged. Return only a JSON object, without Markdown fences. '
         'Every evidence_page_ids item must be a string identifying a page actually read. '
+        'Put only supported facts in claims, each with at least one read-page citation. '
+        'Put missing information and unverified conditions exclusively in unresolved, never in claims with empty citations. '
+        'For a partial answer, keep supported facts and set insufficient_evidence=true. '
+        'Partial-answer format example (PLACEHOLDER_READ_PAGE_ID is not evidence; replace it with an actually read ID, '
+        'and replace the illustrative fact with a supported fact): '
+        '{"claims":[{"text":"A supported fact.","evidence_page_ids":["PLACEHOLDER_READ_PAGE_ID"]}],'
+        '"insufficient_evidence":true,"unresolved":["Evidence for the remaining part is missing."]} '
         'Example of the exact structure when evidence is missing (translate the explanation into the required language): '
         '{"claims":[],"insufficient_evidence":true,"unresolved":["Missing evidence for the requested fact."]}')
 
@@ -160,6 +167,7 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
                           'path':getattr(exc,'path','$'),
                           'message':str(exc) if isinstance(exc,AnswerValidationError) else '答案不是合法 JSON',
                           'request_sequence':call.get('attempt'), 'ledger_id':call.get('ledger_id'),
+                          'request_phase':call.get('phase'),
                           'read_page_ids':sorted(read),
                           **{k:call.get(k) for k in ('response_id','response_model','finish_reason')},
                           'visible_output':diagnostic_text(content,getattr(provider,'key',None))}
@@ -171,7 +179,7 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
         if time.monotonic() >= deadline:
             raise TaskStopped('task_timeout')
 
-    def generate(messages, tools=None):
+    def generate(messages, tools=None, phase='final_answer'):
         nonlocal output_tokens, unknown_tokens, requests
         check_time()
         if requests >= agent_config['max_requests']:
@@ -185,12 +193,12 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
         requests += 1
         start = time.monotonic()
         if hasattr(provider, 'context'):
-            provider.context = dict(provider.context, request_sequence=requests)
+            provider.context = dict(provider.context, request_sequence=requests, phase=phase)
         try:
             response = provider.complete(messages, tools, limit,
                                          min(agent_config['request_timeout'], deadline-start))
         except TaskStopped as exc:
-            record = {'attempt':requests, 'status':str(exc), 'usage':None,
+            record = {'attempt':requests, 'phase':phase, 'status':str(exc), 'usage':None,
                       'cost_status':'reserved_unknown_charge', 'max_tokens':limit} | exc.record
             if str(exc) == 'phase_budget_exhausted' and not record.get('ledger_id'):
                 requests -= 1
@@ -202,14 +210,16 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
             calls.append(record)
             raise
         finally:
-            timings['api_seconds'] += time.monotonic()-start
+            elapsed = time.monotonic()-start
+            timings['api_seconds'] += elapsed
+            timings[phase+'_api_seconds'] = timings.get(phase+'_api_seconds',0.) + elapsed
         usage = response['usage']
         if type(usage.get('completion_tokens')) is not int or usage['completion_tokens'] < 0:
             unknown_tokens += limit
-            calls.append({k:v for k,v in response.items() if k != 'message'} | {'attempt':requests,'status':'missing_usage','max_tokens':limit})
+            calls.append({k:v for k,v in response.items() if k != 'message'} | {'attempt':requests,'phase':phase,'status':'missing_usage','max_tokens':limit})
             raise TaskStopped('missing_usage')
         output_tokens += usage['completion_tokens']
-        calls.append({k: v for k,v in response.items() if k != 'message'} | {'attempt':requests,'status':'received'})
+        calls.append({k: v for k,v in response.items() if k != 'message'} | {'attempt':requests,'phase':phase,'status':'received'})
         check_time()
         if output_tokens+unknown_tokens > agent_config['max_output_tokens']:
             raise TaskStopped('output_token_limit')
@@ -271,7 +281,7 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
                     raise TaskStopped('translation_budget_exhausted')
             else:
                 translation_status = 'live' if translation is None else 'live_missing_cache_budget'
-                translated = convert_query(question,generate)
+                translated = convert_query(question,lambda messages: generate(messages,phase='query_translation'))
         messages.append({'role':'user','content':'English retrieval query: '+translated})
         if mode == 'rag':
             candidates = search_pages(translated)
@@ -283,7 +293,7 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
             answer = parse_answer(response)
             reason = 'answered'
         else:
-            messages.append({'role':'system','content':f'You may search at most {agent_config["max_searches"]} times and read at most {agent_config["max_pages"]} distinct pages. Search, read evidence, then return the specified answer JSON. Use the English retrieval query for the initial search.'})
+            messages.append({'role':'system','content':f'You may search at most {agent_config["max_searches"]} times and read at most {agent_config["max_pages"]} distinct pages. Use tools to gather evidence. When finished gathering, stop calling tools; a separate no-tools request will collect the final answer. Use the English retrieval query for the initial search.'})
             while answer is None:
                 remaining = {'requests':agent_config['max_requests']-requests,
                              'output_tokens':agent_config['max_output_tokens']-output_tokens-unknown_tokens,
@@ -292,11 +302,20 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
                 final = force_final or remaining['requests'] <= 1 or remaining['output_tokens'] <= 1024 or (remaining['searches'] <= 0 and remaining['distinct_pages'] <= 0)
                 messages.append({'role':'system','content':'Remaining budgets: '+json.dumps(remaining)+
                                  ('. Return the final answer JSON now using evidence already read; no tools.' if final else '. Reserve the final request for the answer.')+' '+contract})
-                response = generate(messages, None if final else TOOLS)
+                if final:
+                    trace.append({'event':'final_answer','status':'started',
+                                  'reason':'natural_no_tool' if force_final == 'natural_no_tool' else 'resource_limit',
+                                  'source_request_sequence':requests})
+                response = generate(messages, None if final else TOOLS,
+                                    phase='final_answer' if final else 'tool_decision')
                 tool_calls = response.get('tool_calls')
                 if tool_calls and final:
                     parse_answer(response,forced_tool_call=True)
                 if not tool_calls:
+                    if not final:
+                        # This is a stop signal, not an answer. Never feed the draft back as evidence.
+                        force_final = 'natural_no_tool'
+                        continue
                     answer = parse_answer(response)
                     reason = 'answered'
                     break
