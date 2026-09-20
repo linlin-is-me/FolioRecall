@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import math
+import os
 from pathlib import Path
 import re
 import time
@@ -26,6 +27,47 @@ Return JSON with exactly: claims (array of {text: string, evidence_page_ids: arr
 insufficient_evidence (boolean), unresolved (array of strings). No uncited narrative or invented citations.'''
 
 
+def answer_contract(question):
+    language = 'zh' if re.search(r'[\u3400-\u9fff]', question) else 'en'
+    instruction = ('Write every claims[].text and unresolved[] explanation in Chinese. '
+                   'Company names and necessary technical terms may remain in English.' if language == 'zh' else
+                   'Write every claims[].text and unresolved[] explanation in English.')
+    return language, (instruction + ' The original question determines the answer language; '
+        'the English retrieval query is only for searching, not a request to answer in English. '
+        'Keep JSON keys unchanged. Return only a JSON object, without Markdown fences. '
+        'Every evidence_page_ids item must be a string identifying a page actually read. '
+        'Example of the exact structure when evidence is missing (translate the explanation into the required language): '
+        '{"claims":[],"insufficient_evidence":true,"unresolved":["Missing evidence for the requested fact."]}')
+
+
+class AnswerValidationError(ValueError):
+    def __init__(self, code, path, message):
+        super().__init__(message)
+        self.code, self.path = code, path
+
+
+def diagnostic_text(content, secret=None):
+    """Bound only visible output; never serialize the enclosing provider response."""
+    if not isinstance(content, str):
+        return {'content_type':type(content).__name__, 'text':None,
+                'original_length':None, 'truncated':False}
+    value = content
+    for key in (secret, os.environ.get('DASHSCOPE_API_KEY')):
+        if key:
+            value = value.replace(key, '[REDACTED]')
+            value = value.replace(json.dumps(key)[1:-1], '[REDACTED]')
+    value = re.sub(r'<think\b[^>]*>.*?(?:</think>|$)', '[REDACTED_REASONING]', value, flags=re.I|re.S)
+    value = re.sub(r'"reasoning_content"\s*:\s*"(?:\\.|[^"\\])*"',
+                   '"reasoning_content":"[REDACTED]"', value, flags=re.I)
+    value = re.sub(r'data:[^\s"\']*;base64,[A-Za-z0-9+/=\s]+', '[REDACTED_IMAGE]', value, flags=re.I)
+    value = re.sub(r'\b[A-Za-z0-9+/]{256,}={0,2}', '[REDACTED_ENCODED_DATA]', value)
+    value = re.sub(r'(?i)\bsk-[A-Za-z0-9_.\\-]+', '[REDACTED_KEY]', value)
+    value = re.sub(r'(?i)\bBearer\s+[^\s"\']+', 'Bearer [REDACTED]', value)
+    value = re.sub(r'(?im)\bAuthorization\s*:[^\r\n]*', 'Authorization: [REDACTED]', value)
+    return {'content_type':'str','text':value[:32768], 'original_length':len(content),
+            'sanitized_length':len(value),'truncated':len(value)>32768}
+
+
 def read_evidence(page, max_pixels):
     from PIL import Image
     started = time.monotonic()
@@ -45,19 +87,31 @@ def read_evidence(page, max_pixels):
 
 def validate_answer(value, read_ids):
     if not isinstance(value, dict) or set(value) != {'claims','insufficient_evidence','unresolved'}:
-        raise ValueError('答案结构错误')
-    if not isinstance(value['claims'], list) or type(value['insufficient_evidence']) is not bool or not isinstance(value['unresolved'], list):
-        raise ValueError('答案字段类型错误')
-    if any(not isinstance(v,str) for v in value['unresolved']):
-        raise ValueError('不足项必须为文本')
+        raise AnswerValidationError('answer_shape','$','答案结构错误')
+    for field, kind in (('claims',list),('insufficient_evidence',bool),('unresolved',list)):
+        if type(value[field]) is not kind:
+            raise AnswerValidationError('field_type','$/'+field,'答案字段类型错误')
+    for i, item in enumerate(value['unresolved']):
+        if not isinstance(item,str):
+            raise AnswerValidationError('field_type',f'$/unresolved/{i}','不足项必须为文本')
     if not value['claims'] and not value['insufficient_evidence']:
-        raise ValueError('无证据不能声明回答完成')
-    for claim in value['claims']:
-        if not isinstance(claim, dict) or set(claim) != {'text','evidence_page_ids'} or not isinstance(claim['text'], str) or not claim['text'].strip():
-            raise ValueError('结论结构错误')
+        raise AnswerValidationError('empty_complete_answer','$/claims','无证据不能声明回答完成')
+    for i, claim in enumerate(value['claims']):
+        path = f'$/claims/{i}'
+        if not isinstance(claim, dict) or set(claim) != {'text','evidence_page_ids'}:
+            raise AnswerValidationError('claim_shape',path,'结论结构错误')
+        if not isinstance(claim['text'], str) or not claim['text'].strip():
+            raise AnswerValidationError('claim_text',path+'/text','结论必须为非空文本')
         ids = claim['evidence_page_ids']
-        if not isinstance(ids, list) or not ids or any(not isinstance(p,str) or p not in read_ids for p in ids):
-            raise ValueError('引用必须来自实际读取的页面')
+        if not isinstance(ids,list):
+            raise AnswerValidationError('citation_type',path+'/evidence_page_ids','引用必须为字符串数组')
+        if not ids:
+            raise AnswerValidationError('empty_citations',path+'/evidence_page_ids','结论缺少引用')
+        for j, pid in enumerate(ids):
+            if not isinstance(pid,str):
+                raise AnswerValidationError('citation_type',path+f'/evidence_page_ids/{j}','页面 ID 必须为字符串')
+            if pid not in read_ids:
+                raise AnswerValidationError('unread_citation',path+f'/evidence_page_ids/{j}','引用必须来自实际读取的页面')
     return value
 
 
@@ -87,6 +141,31 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
     answer, reason, translated = None, 'incomplete', question
     timings = {'retrieval_seconds': 0., 'page_read_seconds': 0., 'api_seconds': 0.}
     texts = evidence_texts if evidence_texts is not None else retrieval['texts'] if retrieval else {}
+    language, contract = answer_contract(question)
+
+    def parse_answer(response, forced_tool_call=False):
+        content = response.get('content')
+        stage = 'answer_parse'
+        try:
+            if forced_tool_call:
+                raise AnswerValidationError('unexpected_tool_call','$','最终回答阶段不允许工具调用')
+            if not isinstance(content,str):
+                raise AnswerValidationError('content_type','$','答案内容必须为文本')
+            value = json.loads(content)
+            stage = 'answer_validation'
+            return validate_answer(value,set(read))
+        except (json.JSONDecodeError, AnswerValidationError) as exc:
+            call = calls[-1] if calls else {}
+            diagnostic = {'stage':stage, 'code':getattr(exc,'code','json_syntax'),
+                          'path':getattr(exc,'path','$'),
+                          'message':str(exc) if isinstance(exc,AnswerValidationError) else '答案不是合法 JSON',
+                          'request_sequence':call.get('attempt'), 'ledger_id':call.get('ledger_id'),
+                          'read_page_ids':sorted(read),
+                          **{k:call.get(k) for k in ('response_id','response_model','finish_reason')},
+                          'visible_output':diagnostic_text(content,getattr(provider,'key',None))}
+            if isinstance(exc,json.JSONDecodeError):
+                diagnostic.update(line=exc.lineno,column=exc.colno,position=exc.pos)
+            raise TaskStopped('invalid_answer_or_evidence',{'output_diagnostic':diagnostic}) from exc
 
     def check_time():
         if time.monotonic() >= deadline:
@@ -199,8 +278,9 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
             for item in candidates[:agent_config['max_pages']]:
                 result, image = read_page(item['page_id'])
                 messages.append({'role':'user','content':[{'type':'text','text':'UNTRUSTED PAGE EVIDENCE\n'+json.dumps(result,ensure_ascii=False)}, image]})
+            messages.append({'role':'system','content':contract})
             response = generate(messages)
-            answer = validate_answer(json.loads(response['content']), set(read))
+            answer = parse_answer(response)
             reason = 'answered'
         else:
             messages.append({'role':'system','content':f'You may search at most {agent_config["max_searches"]} times and read at most {agent_config["max_pages"]} distinct pages. Search, read evidence, then return the specified answer JSON. Use the English retrieval query for the initial search.'})
@@ -211,13 +291,13 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
                              'distinct_pages':agent_config['max_pages']-len(cumulative_pages)}
                 final = force_final or remaining['requests'] <= 1 or remaining['output_tokens'] <= 1024 or (remaining['searches'] <= 0 and remaining['distinct_pages'] <= 0)
                 messages.append({'role':'system','content':'Remaining budgets: '+json.dumps(remaining)+
-                                 ('. Return the final answer JSON now using evidence already read; no tools.' if final else '. Reserve the final request for the answer.')})
+                                 ('. Return the final answer JSON now using evidence already read; no tools.' if final else '. Reserve the final request for the answer.')+' '+contract})
                 response = generate(messages, None if final else TOOLS)
                 tool_calls = response.get('tool_calls')
                 if tool_calls and final:
-                    raise TaskStopped('invalid_answer_or_evidence')
+                    parse_answer(response,forced_tool_call=True)
                 if not tool_calls:
-                    answer = validate_answer(json.loads(response.get('content','')), set(read))
+                    answer = parse_answer(response)
                     reason = 'answered'
                     break
                 messages.append({'role':'assistant','content':response.get('content'), 'tool_calls':tool_calls})
@@ -256,7 +336,7 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
         answer = {'claims':[], 'insufficient_evidence':True, 'unresolved':[
             '任务未完成，已有证据不足以形成通过引用校验的回答。' if re.search(r'[\u3400-\u9fff]',question) else
             'The task did not complete with a validated answer. Available evidence is listed separately.']}
-    result = {'question':question,'retrieval_query':translated,'mode':mode,'answer':answer,
+    result = {'question':question,'retrieval_query':translated,'mode':mode,'answer':answer,'answer_language':language,
             'termination_reason':reason,'completed':reason=='answered', 'evidence':list(read.values()),
             'trace':trace,'api_calls':calls,'model_requests':requests,'searches':searches,
             'actual_model_requests':sum(c.get('cost_status')!='not_sent' for c in calls),

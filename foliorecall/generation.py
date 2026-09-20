@@ -153,7 +153,13 @@ class Bailian:
             usage = result['usage']
             cost = self.ledger.settle(key, usage)
             record.update(usage=usage, cost_cny=cost, cost_status='estimated_from_usage_not_invoice')
-            message = result['choices'][0]['message']
+            choice = result['choices'][0]
+            if not isinstance(choice,dict):
+                raise TaskStopped('api_invalid_response')
+            record.update(response_id=result.get('id') if isinstance(result.get('id'),str) else None,
+                          response_model=result.get('model') if isinstance(result.get('model'),str) else None,
+                          finish_reason=choice.get('finish_reason') if isinstance(choice.get('finish_reason'),str) else None)
+            message = choice['message']
             if not isinstance(message, dict) or not ('content' in message or 'tool_calls' in message):
                 raise TaskStopped('api_invalid_response')
             message = {k:message[k] for k in ('role','content','tool_calls') if k in message}
@@ -164,4 +170,4 @@ class Bailian:
             record['seconds'] = time.monotonic()-started
             self.ledger.fail(key, reason)
             raise TaskStopped(reason, record) from exc
-        return record | {'message':message, 'response_model':result.get('model'), 'seconds':time.monotonic()-started}
+        return record | {'message':message, 'seconds':time.monotonic()-started}
