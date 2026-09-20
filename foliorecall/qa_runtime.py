@@ -227,27 +227,40 @@ def ledger_snapshot(configs, execution_id):
 
 
 def wait_for_cooldown(last_finished, seconds, started, max_seconds):
-    """Batch waiting is outside ask(); wall-clock anomalies never grant a reset."""
-    begin, wall = time.monotonic(), time.time()
+    """last_finished is process-local monotonic time, never a persisted timestamp."""
+    begin = time.monotonic()
     if not seconds or last_finished is None:
         return 0., None
-    if (type(last_finished) not in (int,float) or not math.isfinite(last_finished)
-            or last_finished > wall):
-        return 0., 'cooldown_clock_unknown'
-    delay = max(0.,last_finished+seconds-wall)
+    delay = max(0.,last_finished+seconds-begin)
     if max_seconds is not None and begin-started+delay >= max_seconds:
         return 0., 'max_seconds'
     while time.monotonic()-begin < delay:
         elapsed = time.monotonic()-begin
-        if abs((time.time()-wall)-elapsed) > 1.:
-            return elapsed, 'cooldown_clock_unknown'
         if max_seconds is not None and time.monotonic()-started >= max_seconds:
             return elapsed, 'max_seconds'
         time.sleep(max(0.,min(1.,delay-elapsed)))
     elapsed = time.monotonic()-begin
-    if abs((time.time()-wall)-elapsed) > 1.:
-        return elapsed, 'cooldown_clock_unknown'
     return elapsed, None
+
+
+def latest_service_wait(attempts):
+    """Attempts arrive in frozen job/attempt order; wall time cannot reorder calls."""
+    for attempt in reversed(attempts):
+        result = attempt.get('result', {})
+        calls = [c for c in result.get('api_calls', []) if c.get('cost_status') != 'not_sent']
+        call = calls[-1] if calls else result.get('failure')
+        if call and call.get('cost_status') == 'not_sent':
+            continue
+        if not call:
+            continue
+        status = call.get('retry_after_status')
+        if status == 'unresolved' or (status is None and 'retry_not_before' in call):
+            return 0., 'retry_after_unresolved'
+        seconds = call.get('retry_after_seconds', 0.)
+        if type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds < 0:
+            return 0., 'retry_after_unresolved'
+        return seconds, None
+    return 0., None
 
 
 def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_after=None, max_seconds=None,
@@ -309,23 +322,26 @@ def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_af
         provenance(segment,{'identity_digest':signature,'resume':resume,'stop_after':stop_after,'max_seconds':max_seconds})
         new, stopped, executor, execution_error = 0, None, None, None
         cooldown_waits = []
-        finished = [a.get('finished_at') for a in all_attempts if a['state']=='finished']
-        if cooldown and any(type(t) not in (int,float) or not math.isfinite(t) for t in finished):
-            raise ValueError('缺少有效结束时间，不能推测冷却间隔')
-        last_finished = max(finished) if finished and cooldown else None
+        # A restarted process waits the full delay, irrespective of offline wall time.
+        last_finished = time.monotonic() if all_attempts else None
+        previous_wall = all_attempts[-1].get('finished_at') if all_attempts else None
+        service_wait, service_stop = latest_service_wait(all_attempts)
+        if any(a['state'] == 'running' for a in all_attempts):
+            stopped, pending = 'incomplete_budget', []
         for job,folder,attempt,first in pending:
             if stop_after is not None and new >= stop_after:
                 stopped = 'stop_after'; break
             if max_seconds is not None and time.monotonic()-started >= max_seconds:
                 stopped = 'max_seconds'; break
-            waiting = (first or {}).get('result',{}).get('failure',{}).get('retry_not_before',0)
-            if waiting > time.time():
-                stopped = 'retry_after'; break
-            waited, stop = wait_for_cooldown(last_finished,cooldown,started,max_seconds)
+            if service_stop:
+                stopped = service_stop; break
+            waited, stop = wait_for_cooldown(last_finished,max(cooldown,service_wait),started,max_seconds)
             cooldown_waits.append({'key':job['key'],'attempt':attempt,'seconds':waited,
-                                   'previous_finished_at':last_finished,'stopped':stop})
+                                   'previous_finished_at':previous_wall,'stopped':stop,
+                                   'service_wait_seconds':service_wait, 'basis':'process_monotonic'})
             if stop:
                 stopped = stop; break
+            service_wait = 0.
             if executor is None:
                 executor = factory()
             record = {'key':job['key'],'task':job.get('task',{}),'attempt':attempt,'state':'running',
@@ -346,7 +362,8 @@ def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_af
                 break
             record.update(state='finished',finished_at=time.time(),result=result,
                           answer_digest=digest(result['answer']))
-            last_finished = record['finished_at']
+            last_finished = time.monotonic()
+            previous_wall = record['finished_at']
             atomic_json(path,record)
             all_attempts.append(record)
             new += 1

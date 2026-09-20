@@ -91,7 +91,7 @@ class RuntimeTests(unittest.TestCase):
         r=result('api_http_429');r['failure']={'retry_not_before':time.time()+300}
         self.execute([job()],lambda *a:r)
         out=self.execute([job()],lambda *a:(_ for _ in ()).throw(AssertionError()),resume=True)
-        self.assertEqual(out['stopped'],'retry_after')
+        self.assertEqual(out['stopped'],'retry_after_unresolved')
         self.assertEqual(out['attempts_new'],0)
 
     def test_nonretryable_errors_and_exhausted_budget(self):

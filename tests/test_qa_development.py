@@ -8,7 +8,7 @@ from foliorecall.qa_storage import atomic_json, digest
 from foliorecall.qa_translation import translation_identity
 from foliorecall.qa_evaluation import RATINGS
 from scripts.cache_qa_translations import execute_cache
-from scripts.run_qa_development_segment import cache_gate, clock_error, observe_clock, segment_boundary, check_budget, main as segment_main
+from scripts.run_qa_development_segment import cache_gate, segment_boundary, check_budget, main as segment_main
 from scripts.analyze_qa_development import analyze, paired_candidates
 from tests.test_qa_runtime import job, result
 
@@ -124,15 +124,6 @@ class DevelopmentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '未知在途'):
             segment_boundary(output, self.identity, [j], self.units, True)
 
-    def test_clock_jump_uncertain_and_future_fail(self):
-        first = {'wall': 10., 'mono': 1., 'span': .001}
-        good = {'wall': 11., 'mono': 2., 'span': .001}
-        self.assertIsNone(clock_error(good, first, first))
-        for sample, last in [(dict(good, wall=12.), None), (dict(good, span=.11), None), (good, 20.), (dict(good, mono=.5), None)]:
-            self.assertIsNotNone(clock_error(sample, first, first, last))
-        with patch('scripts.run_qa_development_segment.clock_sample', side_effect=[first, dict(good, wall=12.)]), patch('scripts.run_qa_development_segment.time.sleep'):
-            self.assertFalse(observe_clock(self.root/'clock.json', .02))
-
     def test_budget_is_frozen_and_reservations_remain_occupied(self):
         config = dict(self.config, ledger='/original', phase_budget_cny=62.)
         frozen = {'ledger': '/original', 'absolute_cap_cny': 62.}
@@ -151,17 +142,14 @@ class DevelopmentTests(unittest.TestCase):
         with patch('sys.argv', argv), patch('scripts.run_qa_development_segment.prepare_suite', return_value=(units, identity)), \
              patch('scripts.run_qa_development_segment.cache_gate', return_value={'planned': 240}), \
              patch('scripts.run_qa_development_segment.budget_snapshot', return_value={'occupied_cny': 2.}), \
-             patch('scripts.run_qa_development_segment.observe_clock', **mocks) as observe, \
+             patch('time.sleep', side_effect=AssertionError('No startup wait')) as observe, \
              patch('scripts.run_qa_development_segment.execute_plan', return_value={'stopped': 'stop_after', 'attempts_new': 2, 'pending': 0}) as execute:
             code = segment_main()
             return code, observe.call_count, execute.call_count
 
-    def test_observation_before_execution_and_log_reuse_refused(self):
-        self.assertEqual(self.segment(return_value=True), (75, 2, 1))
-        with self.assertRaisesRegex(ValueError, '日志已存在'): self.segment(return_value=True)
-
-    def test_failed_observation_never_starts_execution(self):
-        self.assertEqual(self.segment(return_value=False), (75, 1, 0))
+    def test_no_startup_observation_and_log_reuse_refused(self):
+        self.assertEqual(self.segment(), (75, 0, 1))
+        with self.assertRaisesRegex(ValueError, '日志已存在'): self.segment()
 
     def review(self, a):
         return {'key': a['key'], 'attempt': a['attempt'], 'answer_digest': a['answer_digest'],

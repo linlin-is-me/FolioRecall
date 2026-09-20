@@ -1,4 +1,4 @@
-"""A4 foreground segments: strict caches, clock observations and domain boundaries."""
+"""A4 foreground segments: strict caches, service cooldown and domain boundaries."""
 import argparse
 import contextlib
 import math
@@ -68,46 +68,6 @@ def segment_boundary(output, identity, jobs, units, resume, retry_one=False):
             'next_key': pending[0][0]['key'], 'attempt': pending[0][1]}
 
 
-def clock_sample():
-    before = time.monotonic()
-    wall = time.time()
-    after = time.monotonic()
-    return {'wall': wall, 'mono': (before+after)/2, 'span': after-before}
-
-
-def clock_error(sample, first, previous, last_finished=None):
-    if not all(math.isfinite(sample[k]) for k in ('wall','mono','span')) or not 0 <= sample['span'] <= .1:
-        return 'uncertain_sample'
-    if previous and (sample['mono'] <= previous['mono'] or sample['wall'] < previous['wall']):
-        return 'clock_rollback'
-    if abs((sample['wall']-first['wall'])-(sample['mono']-first['mono'])) > .5:
-        return 'clock_increment_mismatch'
-    if last_finished is not None and last_finished > sample['wall']:
-        return 'saved_time_in_future'
-    return None
-
-
-def observe_clock(path, interval, seconds=180, last_finished=None):
-    first = clock_sample()
-    rows, previous = [first], first
-    error = clock_error(first, first, None, last_finished)
-    deadline = first['mono']
-    while error is None:
-        deadline += interval
-        time.sleep(max(0, deadline-time.monotonic()))
-        sample = clock_sample()
-        error = clock_error(sample, first, previous, last_finished)
-        rows.append(sample)
-        if error or sample['mono']-first['mono'] >= seconds:
-            break
-        previous = sample
-    report = {'passed': error is None, 'error': error, 'interval': interval,
-              'duration': rows[-1]['mono']-first['mono'], 'samples': rows,
-              'max_increment_difference': max(abs((s['wall']-first['wall'])-(s['mono']-first['mono'])) for s in rows)}
-    atomic_json(path, report)
-    return report['passed']
-
-
 def check_budget(config, frozen, estimated_remaining):
     if config['ledger'] != frozen['ledger'] or config['phase_budget_cny'] != frozen['absolute_cap_cny']:
         raise ValueError('共享账本或固定费用上限变化')
@@ -158,22 +118,12 @@ def main():
         provenance(record, {'identity_digest': digest(identity), 'forecast': forecast,
                            'boundary': {k:v for k,v in boundary.items() if k != 'saved'}, 'cache': gate})
         atomic_json(record/'budget.json', budget)
-        boot = Path('/proc/sys/kernel/random/boot_id')
-        atomic_json(record/'clock-context.json', {'boot_id': boot.read_text().strip() if boot.exists() else None,
-            'wall': time.time(), 'monotonic': time.monotonic(),
-            'scope': 'Wall/monotonic increment stability only; no system time adjustment'})
         if not budget['passed']:
             atomic_json(record/'result.json', {'stopped': 'forecast_budget_insufficient'})
             return 75
         if not boundary['stop_after']:
             atomic_json(record/'result.json', {'stopped': None, 'already_complete': True})
             return 0
-        last = max((r['finished_at'] for r in boundary['saved']), default=None)
-        for name, interval in [('clock-20ms.json', .02), ('clock-1s.json', 1.)]:
-            print(f'Clock observation: {name}', flush=True)
-            if not observe_clock(record/name, interval, last_finished=last):
-                atomic_json(record/'result.json', {'stopped': 'clock_preflight_failed', 'observation': name})
-                return 75
         # No model or provider initialization until every read-only gate passed.
         print(f'Running {boundary["domain"]}: at most {boundary["stop_after"]} attempts', flush=True)
         with (record/'run.log').open('x', encoding='utf-8') as log, contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):

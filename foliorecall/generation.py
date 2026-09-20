@@ -10,8 +10,42 @@ import time
 from urllib.parse import urlparse
 import uuid
 from email.utils import parsedate_to_datetime
+from datetime import timezone
 
 MODEL = 'qwen3-vl-plus-2025-12-19'
+
+
+def retry_after_metadata(headers):
+    """Freeze a service delay at receipt; absolute deadlines are diagnostic only."""
+    value = headers.get('Retry-After')
+    if value is None:
+        return {'retry_after_status': 'absent'}
+    value = value.strip()
+    if re.fullmatch(r'[0-9]+', value):
+        try:
+            seconds = float(value)
+            if math.isfinite(seconds):
+                return {'retry_after_status': 'resolved', 'retry_after_source': 'delay_seconds',
+                        'retry_after_seconds': seconds, 'retry_not_before': time.time()+seconds}
+        except (ValueError, OverflowError):
+            pass
+        return {'retry_after_status': 'invalid'}
+    def timestamp(raw):
+        parsed = parsedate_to_datetime(raw)
+        return parsed.replace(tzinfo=parsed.tzinfo or timezone.utc).timestamp()
+    try:
+        deadline = timestamp(value)
+    except (ValueError, TypeError, OverflowError, IndexError):
+        return {'retry_after_status': 'invalid'}
+    out = {'retry_after_status': 'unresolved', 'retry_after_source': 'http_date',
+           'retry_not_before': deadline}
+    try:
+        server_now = timestamp(headers.get('Date'))
+    except (ValueError, TypeError, OverflowError, IndexError):
+        return out
+    out.update(retry_after_status='resolved', retry_after_source='http_date_server_date',
+               retry_after_seconds=max(0., deadline-server_now))
+    return out
 
 
 def diagnostic_text(content, secret=None, limit=32768):
@@ -183,17 +217,7 @@ class Bailian:
             response = asyncio.run(bounded_request())
             if response.status_code != 200:
                 record['http_diagnostic'] = http_error_diagnostic(response,self.key)
-                retry = response.headers.get('Retry-After')
-                if retry:
-                    try:
-                        delay = float(retry)
-                        if math.isfinite(delay):
-                            record['retry_not_before'] = time.time()+max(0., delay)
-                    except ValueError:
-                        try:
-                            record['retry_not_before'] = parsedate_to_datetime(retry).timestamp()
-                        except (ValueError, TypeError, OverflowError, IndexError):
-                            pass
+                record.update(retry_after_metadata(response.headers))
                 raise TaskStopped(f'api_http_{response.status_code}')
             try:
                 result = response.json()
