@@ -20,7 +20,7 @@ FolioRecall separates offline page encoding from online query encoding. A multim
 - **Independent query encoders:** load complete Qwen3-VL or NanoVDR packages, with teacher–index compatibility checks before model loading.
 - **Resumable indexing and local serving:** save page embeddings in chunks; share retrieval logic between the CLI and a persistent, single-model Gradio app.
 - **Training and evaluation:** run LoRA adaptation, query-vector distillation, BM25 and neural retrieval comparisons, with measured latency and resource use.
-- **Optional hybrid retrieval:** reuse a visual index with page-aligned BM25 and fixed RRF fusion; extract existing PDF text layers without OCR. See the [extension commands and retrospective CPU results (Chinese)](doc/首版使用与评测.md#扩展阶段-a混合检索与文档问答). The fixed Bailian model has passed all three live capability probes; full RAG/Agent task quality and cost acceptance remains pending.
+- **Optional hybrid retrieval:** reuse a visual index with page-aligned BM25 and fixed RRF fusion; extract existing PDF text layers without OCR. See the [extension commands and retrospective CPU results (Chinese)](doc/首版使用与评测.md#扩展阶段-a混合检索与文档问答). A two-task bilingual RAG/Agent pilot produced structurally valid answers in 9 of 12 first attempts. Output-validation failures, language-following errors, and answer-quality limitations remain; full acceptance and Agent gains are unproven. [Pilot evidence (Chinese)](doc/首版使用与评测.md#a3-两题真实小试保留已知错译接续).
 
 ## Demo
 
