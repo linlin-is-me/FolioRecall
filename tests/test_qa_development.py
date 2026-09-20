@@ -190,5 +190,24 @@ class DevelopmentTests(unittest.TestCase):
         b['task']['reference_facts'] = ['changed']
         with self.assertRaises(ValueError): paired_candidates([a], [b], [self.review(a)], [self.review(b)])
 
+    def test_condition_pairs_and_three_round_observed_ranges(self):
+        jobs = []
+        for condition in ('visual-rag', 'hybrid-rag'):
+            for repeat in range(3):
+                j = job(0, 'en', condition); j['key']['repeat'] = repeat; jobs.append(j)
+        rows = [self.saved(j) for j in jobs]
+        for i,a in enumerate(rows):
+            a['result']['actual_model_requests'] = 1+i%3
+            a['result']['answer']['claims'] = [{'text': 'Synthetic claim', 'evidence_page_ids': ['485']}]
+            a['answer_digest'] = digest(a['result']['answer'])
+        reviews = [self.review(a) for a in rows]
+        report = analyze({'job_keys': [j['key'] for j in jobs]}, rows, reviews)
+        observed = report['three_round_variation'][0]
+        self.assertEqual(observed['ranges']['actual_requests'], [1,3])
+        self.assertEqual(observed['observations'][0]['citation_page_ids'], ['485'])
+        pairs = [p for p in report['condition_pairs'] if p['variant'] == 'hybrid-rag']
+        self.assertEqual(len(pairs), 3)
+        self.assertTrue(all(p['paired_reviewed'] for p in pairs))
+
 
 if __name__ == '__main__': unittest.main()

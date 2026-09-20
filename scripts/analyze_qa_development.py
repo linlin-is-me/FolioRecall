@@ -66,16 +66,32 @@ def analyze(manifest, attempts, reviews):
             observations.append({'key': key, 'state': a['state'] if a else 'pending',
                 'completed': result.get('completed'), 'answer_digest': a.get('answer_digest') if a else None,
                 'citation_page_ids': sorted({p for claim in result.get('answer', {}).get('claims', []) for p in claim.get('evidence_page_ids', [])}),
-                'requests': result.get('model_requests'), 'active_seconds': result.get('timing', {}).get('task_seconds'),
+                'requests': result.get('model_requests'), 'actual_requests': result.get('actual_model_requests'),
+                'known_cost_cny': result.get('estimated_cost_cny'),
+                'active_seconds': result.get('timing', {}).get('task_seconds'),
                 'ratings': {m: r[m] for m in RATINGS} if r else None})
         complete = all(o['state'] == 'finished' and o['ratings'] is not None for o in observations)
         ranges = {}
         for metric in RATINGS:
             values = [o['ratings'][metric] for o in observations] if complete else []
             ranges[metric] = [min(values), max(values)] if values and all(v is not None for v in values) else None
+        for metric in ('requests', 'actual_requests', 'known_cost_cny', 'active_seconds'):
+            values = [o[metric] for o in observations]
+            ranges[metric] = [min(values), max(values)] if all(v is not None for v in values) else None
         variability.append({'cell': group, 'observations': observations, 'all_reviewed': complete, 'ranges': ranges})
+    condition_pairs = []
+    by_cell = defaultdict(dict)
+    for r in accepted.values():
+        k = r['key']
+        group = tuple(k[x] for x in ('domain', 'task_id', 'language', 'repeat')) + (r['attempt'],)
+        by_cell[group][k['condition']] = r
+    for group, conditions in sorted(by_cell.items()):
+        for base, variant in [('visual-rag', 'hybrid-rag'), ('hybrid-rag', 'hybrid-agent')]:
+            a, b = conditions.get(base), conditions.get(variant)
+            condition_pairs.append({'cell': group, 'base': base, 'variant': variant, 'paired_reviewed': bool(a and b),
+                'score_delta': {m: b[m]-a[m] if b[m] is not None and a[m] is not None else None for m in RATINGS} if a and b else None})
     return {'summary': summary, 'all_attempts_reviewed': all_reviewed, 'primary_errors': errors,
-            'candidate_target': selection, 'three_round_variation': variability,
+            'candidate_target': selection, 'three_round_variation': variability, 'condition_pairs': condition_pairs,
             'scope': 'Assistant reviews; first attempts primary. Three observations do not establish a stable P95.'}
 
 
