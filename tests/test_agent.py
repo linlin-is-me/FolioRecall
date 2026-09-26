@@ -5,7 +5,8 @@ import unittest
 from unittest.mock import patch
 from PIL import Image
 
-from foliorecall.agent import ask, read_evidence, validate_answer, load_public_corpus, ANSWER_RULES
+from foliorecall.agent import (ask, read_evidence, validate_answer, load_public_corpus, ANSWER_RULES,
+                              final_answer_contract, FINAL_ANSWER_EVIDENCE_CHECK)
 from foliorecall.generation import CostLedger, TaskStopped, Bailian, validate_agent_config
 from foliorecall.io import read_json, write_json
 
@@ -60,6 +61,50 @@ class AgentTests(unittest.TestCase):
         self.assertNotIn('base64',json.dumps(result))
         self.assertEqual(provider.inputs[-1][0][0]['content'],ANSWER_RULES)
         self.assertEqual([t['function']['name'] for t in provider.inputs[0][1]],['search_pages','read_page'])
+
+    def test_evidence_check_only_changes_final_request_on_each_exit(self):
+        cases = [('rag', [message()], {}),
+                 ('agent', [tool('read_page',{'page_id':'p1'}), {'content':'Done'}, message()], {}),
+                 ('agent', [tool('read_page',{'page_id':'p1'}), message()], {'max_requests':2}),
+                 ('agent', [message()], {'max_output_tokens':1024}),
+                 ('agent', [tool('search_pages',{'query':'x'}), tool('read_page',{'page_id':'p1'}), message()],
+                  {'max_searches':1, 'max_pages':1})]
+        for mode, responses, limits in cases:
+            with self.subTest(mode=mode, limits=limits):
+                base, candidate = FakeProvider(responses), FakeProvider(responses)
+                a = self.run_ask(base,mode,**limits)
+                b = self.run_ask(candidate,mode,final_answer_evidence_check=True,**limits)
+                self.assertTrue(a['completed']); self.assertTrue(b['completed'])
+                self.assertEqual(a['answer'],b['answer'])
+                self.assertEqual(a['actual_model_requests'],b['actual_model_requests'])
+                self.assertEqual(len(base.inputs),len(candidate.inputs))
+                for i,(old,new) in enumerate(zip(base.inputs,candidate.inputs)):
+                    text = json.dumps(new[0])
+                    self.assertEqual(text.count(FINAL_ANSWER_EVIDENCE_CHECK),int(i==len(base.inputs)-1))
+                    normalized = json.loads(text.replace('\\n'+FINAL_ANSWER_EVIDENCE_CHECK,''))
+                    self.assertEqual(old[0],normalized)
+                    self.assertEqual(old[1:3],new[1:3])
+
+    def test_evidence_check_disabled_preserves_original_contract_bytes(self):
+        expected = ('contract\nCitation permissions supplied by the application: '
+            'page_number is a physical page number, never a substitute for page_id. '
+            'Search results and snippets are candidates, not pages already read. '
+            'Copy each citation exactly from allowed_evidence_page_ids below; do not cite any other ID. '
+            'The list only grants citation permission: the page must also support the claim. '
+            'Put unsupported or missing parts exclusively in unresolved, not in claims with empty citations. '
+            'If the list is empty, return claims=[], insufficient_evidence=true and explain missing evidence in unresolved. '
+            '\nallowed_evidence_page_ids=["a", "b"]')
+        self.assertEqual(final_answer_contract('contract',{'b','a'}),expected)
+        self.assertEqual(final_answer_contract('contract',{'b','a'},False),expected)
+        self.assertEqual(final_answer_contract('contract',{'b','a'},True),
+                         expected.replace('\nallowed_evidence_page_ids=', '\n'+FINAL_ANSWER_EVIDENCE_CHECK+'\nallowed_evidence_page_ids='))
+
+    def test_evidence_check_rejects_non_boolean_before_provider(self):
+        for value in (None,0,1,'true',[],{}):
+            provider = FakeProvider([])
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.run_ask(provider,final_answer_evidence_check=value)
+            self.assertEqual(provider.inputs,[])
 
     def test_unread_citation_rejected(self):
         result=self.run_ask(FakeProvider([message([{'text':'x','evidence_page_ids':['p1']}])]),max_requests=1)

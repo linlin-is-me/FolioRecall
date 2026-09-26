@@ -105,6 +105,8 @@ class TaskStopped(RuntimeError):
 
 
 def validate_agent_config(config):
+    if type(config.get('final_answer_evidence_check', False)) is not bool:
+        raise ValueError('final_answer_evidence_check 必须为布尔值')
     if config.get('provider') != 'bailian' or config.get('model') != MODEL or config.get('region') != 'cn-beijing':
         raise ValueError('仅支持北京百炼 qwen3-vl-plus-2025-12-19，不能自动替换模型或地域')
     if config.get('temperature') != 0 or config.get('enable_thinking') is not False:

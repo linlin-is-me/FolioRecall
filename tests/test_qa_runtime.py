@@ -243,6 +243,19 @@ class BudgetAndProviderTests(unittest.TestCase):
             else:over['api_calls'][0]['usage']['completion_tokens']=8000
             self.assertEqual(self.ask(FakeProvider([]),question='什么？',translation=over)['termination_reason'],'translation_budget_exhausted')
 
+    def test_candidate_reuses_translation_identity_and_original_budget(self):
+        cache = self.cached()
+        self.assertTrue(validate_translation(cache,'什么？',dict(self.config,final_answer_evidence_check=True)))
+        for enabled in (False,True):
+            provider = FakeProvider([message()])
+            out = self.ask(provider,question='什么？',translation=cache,final_answer_evidence_check=enabled)
+            self.assertEqual(out['translation_status'],'cached_quality_only')
+            self.assertEqual(out['actual_model_requests'],1)
+            self.assertEqual(out['model_requests'],2)
+            self.assertEqual(out['output_tokens'],25)
+            self.assertEqual(out['estimated_cost_cny'],.001)
+            self.assertEqual(out['translation_history']['api_calls'],cache['api_calls'])
+
     def test_legacy_ledger_migration_known_usage_survives_invalid_response(self):
         path=self.config['ledger']
         with sqlite3.connect(path) as db:

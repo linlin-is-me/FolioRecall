@@ -52,7 +52,14 @@ class AnswerValidationError(ValueError):
         self.code, self.path = code, path
 
 
-def final_answer_contract(contract, read_ids):
+FINAL_ANSWER_EVIDENCE_CHECK = ('Before writing the final answer, check that each claim and its cited evidence refer to the same subject and, '
+    'when applicable, the same product or security series. Preserve the conditions under which each statement applies and any explicit '
+    'exclusions in the evidence. Do not transfer a rule or condition from one subject or series to another. If the evidence does not '
+    'establish the required subject, series, applicability or exclusions, state that limitation in unresolved instead of asserting the '
+    'unsupported statement. Return only the existing answer JSON; do not add a checklist or describe internal reasoning.')
+
+
+def final_answer_contract(contract, read_ids, final_answer_evidence_check=False):
     """Only this attempt's successfully read IDs grant citation permission."""
     allowed = sorted(read_ids)
     return (contract + '\nCitation permissions supplied by the application: '
@@ -62,7 +69,8 @@ def final_answer_contract(contract, read_ids):
         'The list only grants citation permission: the page must also support the claim. '
         'Put unsupported or missing parts exclusively in unresolved, not in claims with empty citations. '
         'If the list is empty, return claims=[], insufficient_evidence=true and explain missing evidence in unresolved. '
-        '\nallowed_evidence_page_ids=' + json.dumps(allowed, ensure_ascii=False))
+        + ('\n' + FINAL_ANSWER_EVIDENCE_CHECK if final_answer_evidence_check else '')
+        + '\nallowed_evidence_page_ids=' + json.dumps(allowed, ensure_ascii=False))
 
 
 def read_evidence(page, max_pixels):
@@ -278,7 +286,7 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
             for item in candidates[:agent_config['max_pages']]:
                 result, image = read_page(item['page_id'])
                 messages.append({'role':'user','content':[{'type':'text','text':'UNTRUSTED PAGE EVIDENCE\n'+json.dumps(result,ensure_ascii=False)}, image]})
-            messages.append({'role':'system','content':final_answer_contract(contract,read)})
+            messages.append({'role':'system','content':final_answer_contract(contract,read,agent_config.get('final_answer_evidence_check',False))})
             trace.append({'event':'final_answer','status':'started','reason':'fixed_rag',
                           'source_request_sequence':requests,'allowed_evidence_page_ids':sorted(read)})
             response = generate(messages)
@@ -294,7 +302,7 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
                 final = force_final or remaining['requests'] <= 1 or remaining['output_tokens'] <= 1024 or (remaining['searches'] <= 0 and remaining['distinct_pages'] <= 0)
                 messages.append({'role':'system','content':'Remaining budgets: '+json.dumps(remaining)+
                                  ('. Return the final answer JSON now using evidence already read; no tools.' if final else '. Reserve the final request for the answer.')+' '+
-                                 (final_answer_contract(contract,read) if final else contract)})
+                                 (final_answer_contract(contract,read,agent_config.get('final_answer_evidence_check',False)) if final else contract)})
                 if final:
                     trace.append({'event':'final_answer','status':'started',
                                   'reason':'natural_no_tool' if force_final == 'natural_no_tool' else 'resource_limit',
