@@ -7,7 +7,7 @@ from pathlib import Path
 import time
 from foliorecall.io import read_json, provenance
 from foliorecall.qa_storage import atomic_json, digest, output_lock
-from foliorecall.qa_runtime import prepare_suite, suite_jobs, execute_plan, provider_factory, can_recover
+from foliorecall.qa_runtime import prepare_suite, suite_jobs, execute_plan, provider_factory, can_recover, latest_service_wait, wait_for_cooldown
 from foliorecall.qa_translation import validate_translation
 from scripts.prepare_qa_development import budget_snapshot
 
@@ -88,12 +88,32 @@ def main():
     p.add_argument('--record', required=True)
     p.add_argument('--budget', required=True)
     p.add_argument('--translation-cache')
+    p.add_argument('--continuation', help='Explicit audited never-started subset; original run stays unchanged')
     p.add_argument('--forecast', required=True, help='Frozen JSON with remaining_cny and evidence; refreshed before each batch')
     p.add_argument('--resume', action='store_true')
     p.add_argument('--retry-one', action='store_true')
     p.add_argument('--dry-run', action='store_true')
     p.add_argument('--max-seconds', type=float, default=14400)
     a = p.parse_args()
+    with contextlib.ExitStack() as locks:
+        descriptor = read_json(a.continuation) if a.continuation else None
+        if descriptor:
+            locks.enter_context(output_lock(descriptor['source_directory']))
+        return run_segment(a, descriptor)
+
+
+def initial_continuation_wait(source_attempts, saved, started, max_seconds):
+    if saved:
+        return {'seconds': 0., 'stopped': None, 'basis': 'runtime_resume_cooldown'}
+    service, stop = latest_service_wait(source_attempts)
+    if stop:
+        return {'seconds': 0., 'stopped': stop}
+    elapsed, stop = wait_for_cooldown(time.monotonic(), max(65., service), started, max_seconds)
+    return {'seconds': elapsed, 'stopped': stop, 'basis': 'process_monotonic', 'service_wait_seconds': service}
+
+
+def run_segment(a, descriptor=None):
+    started = time.monotonic()
     if not 0 < a.max_seconds <= 14400:
         raise ValueError('运行段上限须在 0 至 14400 秒之间')
     os.environ.update(CUDA_VISIBLE_DEVICES='', HF_HUB_OFFLINE='1', TOKENIZERS_PARALLELISM='false',
@@ -103,12 +123,19 @@ def main():
     if identity['suite'].get('inter_task_cooldown_seconds') != 65 or any(u['student']['device'] != 'cpu' for u in units):
         raise ValueError('A4 必须使用 CPU 及 65 秒冷却')
     gate = cache_gate(units, jobs, identity['suite'].get('repeats') == 3)
+    source_attempts = []
+    if descriptor:
+        from scripts.qa_continuation import derive
+        identity, jobs, source_attempts = derive(descriptor, identity, jobs, a.output)
+        gate = dict(gate, continuation_planned=len(jobs), declared_missing=len(descriptor['excluded']))
     boundary = segment_boundary(a.output, identity, jobs, units, a.resume, a.retry_one)
     forecast, frozen = read_json(a.forecast), read_json(a.budget)
     if not forecast.get('evidence'):
         raise ValueError('费用预测必须注明已有实测来源和剩余范围')
     if a.dry_run:
-        print({**gate, **{k:v for k,v in boundary.items() if k != 'saved'}, 'dry_run': True})
+        budget = check_budget(units[0]['agent'], frozen, forecast['remaining_cny'])
+        print({**gate, **{k:v for k,v in boundary.items() if k != 'saved'}, 'dry_run': True,
+               'budget_passed': budget['passed'], 'remaining_cny': budget['remaining_cny']})
         return 0
     record = Path(a.record)
     with output_lock(record):
@@ -124,11 +151,18 @@ def main():
         if not boundary['stop_after']:
             atomic_json(record/'result.json', {'stopped': None, 'already_complete': True})
             return 0
+        if descriptor:
+            initial = initial_continuation_wait(source_attempts, boundary['saved'], started, a.max_seconds)
+            atomic_json(record/'initial-cooldown.json', initial)
+            if initial['stopped']:
+                atomic_json(record/'result.json', initial)
+                return 75
         # No model or provider initialization until every read-only gate passed.
         print(f'Running {boundary["domain"]}: at most {boundary["stop_after"]} attempts', flush=True)
         with (record/'run.log').open('x', encoding='utf-8') as log, contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
             result = execute_plan(a.output, identity, jobs, lambda: provider_factory(units),
-                [u['agent'] for u in units], a.resume, boundary['stop_after'], a.max_seconds)
+                [u['agent'] for u in units], a.resume, boundary['stop_after'], a.max_seconds,
+                command_started=started)
         atomic_json(record/'result.json', result)
         print({'stopped': result['stopped'], 'attempts_new': result['attempts_new'], 'pending': result['pending']}, flush=True)
         return 0 if result['stopped'] is None else 75
