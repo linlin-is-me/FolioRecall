@@ -1,5 +1,7 @@
 """Prepare durable quality-only conversions; API costs unless --dry-run."""
 import argparse
+import math
+import time
 import uuid
 from pathlib import Path
 from foliorecall.generation import Bailian
@@ -29,7 +31,9 @@ def check_record(record, item):
 
 
 def execute_cache(units, identity, output, resume=False, seed_cache=None,
-                  dry_run=False, provider_factory=Bailian):
+                  dry_run=False, provider_factory=Bailian, cooldown_seconds=0):
+    if type(cooldown_seconds) not in (int, float) or not math.isfinite(cooldown_seconds) or cooldown_seconds < 0:
+        raise ValueError('转换冷却必须为非负有限秒数')
     jobs = translation_jobs(units)
     seeds = read_json(seed_cache) if seed_cache else {}
     if not isinstance(seeds, dict) or not set(seeds) <= set(jobs):
@@ -38,6 +42,8 @@ def execute_cache(units, identity, output, resume=False, seed_cache=None,
         check_record(record, jobs[task_id])
     binding = {'suite': identity, 'jobs': jobs, 'seed_records': seeds,
                'seed_source': str(Path(seed_cache).resolve()) if seed_cache else None}
+    if cooldown_seconds:
+        binding['cooldown_seconds'] = cooldown_seconds
     if dry_run:
         return {'dry_run': True, 'queries': len(jobs), 'seeded': len(seeds),
                 'new_queries': len(jobs)-len(seeds)}
@@ -79,9 +85,21 @@ def execute_cache(units, identity, output, resume=False, seed_cache=None,
                 records[task_id] = record
         atomic_json(output/'translations.json', records)
         provider = None
+        # A fresh process waits the full interval; no persisted wall clock is trusted.
+        last_finished = time.monotonic()
+        waited = []
+        cooldown_record = output/'cooldowns'/f'{time.time_ns()}.json'
         for task_id, item in jobs.items():
             if task_id in records:
                 continue
+            if cooldown_seconds:
+                from foliorecall.qa_runtime import latest_service_wait, wait_for_cooldown
+                service, stop = latest_service_wait([{'result': records[k]} for k in jobs if k in records])
+                if stop:
+                    raise ValueError('转换服务等待无法解释；暂停核对')
+                elapsed, stop = wait_for_cooldown(last_finished, max(cooldown_seconds, service), time.monotonic(), None)
+                waited.append({'task_id': task_id, 'seconds': elapsed, 'service_seconds': service})
+                atomic_json(cooldown_record, {'resume': resume, 'waits': waited})
             if provider is None:
                 provider = provider_factory(item['config'])
             provider.context = {'suite': identity['suite']['suite_id'], 'task_id': task_id,
@@ -95,6 +113,7 @@ def execute_cache(units, identity, output, resume=False, seed_cache=None,
                 atomic_json(output/'failure.json', {'task_id': task_id, 'type': type(exc).__name__,
                     'call': getattr(exc, 'record', {}), 'scope': 'Stopped; reconcile ledger before continuation'})
                 raise
+            last_finished = time.monotonic()
             atomic_json(output/'records'/f'{digest(task_id)}.json', record)
             records[task_id] = record
             atomic_json(output/'translations.json', records)
@@ -113,9 +132,10 @@ def main():
     p.add_argument('--dry-run',action='store_true')
     p.add_argument('--resume',action='store_true')
     p.add_argument('--seed-cache')
+    p.add_argument('--cooldown-seconds', type=float, default=0)
     a=p.parse_args()
     units,identity=prepare_suite(a.suite)
-    print(execute_cache(units,identity,a.output,a.resume,a.seed_cache,a.dry_run))
+    print(execute_cache(units,identity,a.output,a.resume,a.seed_cache,a.dry_run,cooldown_seconds=a.cooldown_seconds))
 
 
 if __name__ == '__main__':

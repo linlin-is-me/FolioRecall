@@ -113,6 +113,26 @@ class ResumableIndexTests(unittest.TestCase):
             build_index(self.config, self.pages, out, True, 2)
         self.load.assert_not_called()
 
+    def test_exact_chunk_pause_is_per_segment_and_not_encoding_identity(self):
+        out = self.root / 'chunk-limited'
+        result = build_index(self.config, self.pages, out, chunk_size=1, stop_after_chunks=1)
+        self.assertEqual(result['completed_pages'], 1)
+        self.assertEqual(result['reason'], 'chunk limit')
+        self.assertFalse(out.exists())
+        result = build_index(self.config, self.pages, out, True, 1, stop_after_chunks=1)
+        self.assertEqual(result['completed_pages'], 2)
+        self.assertEqual(self.encoded, ['0', '1'])
+        result = build_index(self.config, self.pages, out, True, 1)
+        self.assertTrue(result['complete'])
+        self.assertEqual(self.encoded, ['0', '1', '2'])
+        self.assertNotIn('stop_after_chunks', read_json(self.root / 'chunk-limited.work/manifest.json'))
+
+    def test_invalid_chunk_limit_fails_before_loading(self):
+        for value in (0, -1, True, 1.5):
+            with self.assertRaisesRegex(ValueError, '正整数'):
+                build_index(self.config, self.pages, self.root / 'bad', stop_after_chunks=value)
+        self.load.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

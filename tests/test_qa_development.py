@@ -14,6 +14,23 @@ from tests.test_qa_runtime import job, result
 
 
 class DevelopmentTests(unittest.TestCase):
+    def test_optional_cache_cooldown_is_fresh_and_service_wait_wins(self):
+        with patch('foliorecall.qa_runtime.wait_for_cooldown', return_value=(65., None)) as wait, \
+                patch('foliorecall.qa_runtime.latest_service_wait', side_effect=[(0., None), (90., None)]):
+            self.execute(cooldown_seconds=65)
+            self.assertEqual([c.args[1] for c in wait.call_args_list], [65, 90])
+            self.execute(cooldown_seconds=65, resume=True)
+            self.assertEqual(wait.call_count, 2)
+        with self.assertRaisesRegex(ValueError, '身份不匹配'):
+            self.execute(resume=True)
+
+    def test_unresolved_service_wait_stops_before_next_translation(self):
+        with patch('foliorecall.qa_runtime.wait_for_cooldown', return_value=(65., None)), \
+                patch('foliorecall.qa_runtime.latest_service_wait', side_effect=[(0., None), (0., 'retry_after_unresolved')]):
+            with self.assertRaisesRegex(ValueError, '服务等待'):
+                self.execute(cooldown_seconds=65)
+        self.assertEqual(len(self.calls), 1)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)

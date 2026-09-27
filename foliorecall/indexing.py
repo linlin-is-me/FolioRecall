@@ -73,9 +73,11 @@ def completed_chunks(work, pages, dimension):
     return chunks, position
 
 
-def build_index(config, pages_path, output, resume=False, chunk_size=64, max_seconds=None):
+def build_index(config, pages_path, output, resume=False, chunk_size=64, max_seconds=None, stop_after_chunks=None):
     if chunk_size < 1 or (max_seconds is not None and max_seconds <= 0):
         raise ValueError('chunk-size 和 max-seconds 必须为正')
+    if stop_after_chunks is not None and (type(stop_after_chunks) is not int or stop_after_chunks < 1):
+        raise ValueError('stop-after-chunks 必须为正整数')
     if resume and not Path(str(Path(output).resolve()) + '.work/manifest.json').is_file():
         raise ValueError('没有可恢复的建库清单')
     output = Path(output).resolve()
@@ -101,11 +103,12 @@ def build_index(config, pages_path, output, resume=False, chunk_size=64, max_sec
         chunks, position = completed_chunks(work, pages, config['dimension'])
         run = work / 'runs' / str(time.time_ns())
         provenance(run, {'encoding': config, 'pages': str(Path(pages_path).resolve()),
-            'output': str(output), 'resume': resume, 'chunk_size': chunk_size, 'max_seconds': max_seconds})
-        return _encode_and_finish(config, pages, output, work, run, chunks, position, chunk_size, max_seconds)
+            'output': str(output), 'resume': resume, 'chunk_size': chunk_size, 'max_seconds': max_seconds,
+            'stop_after_chunks': stop_after_chunks})
+        return _encode_and_finish(config, pages, output, work, run, chunks, position, chunk_size, max_seconds, stop_after_chunks)
 
 
-def _encode_and_finish(config, pages, output, work, run, chunks, position, chunk_size, max_seconds):
+def _encode_and_finish(config, pages, output, work, run, chunks, position, chunk_size, max_seconds, stop_after_chunks=None):
     from .query import process_memory
     started = time.monotonic()
     limit = min(float(max_seconds or float('inf')), float(os.environ.get('FOLIORECALL_TASK_SECONDS', 'inf')))
@@ -119,6 +122,7 @@ def _encode_and_finish(config, pages, output, work, run, chunks, position, chunk
                'probe_seconds': 0., 'encoding_seconds': 0., 'cache_write_seconds': 0., 'complete': False}
     atomic_json(run / 'segment.json', segment)
     model = None
+    new_chunks = 0
     try:
         if position < len(pages):
             from .encoding import load_encoder, encode_pages, processing
@@ -139,7 +143,7 @@ def _encode_and_finish(config, pages, output, work, run, chunks, position, chunk
             del features
             segment['probe_seconds'] = time.monotonic() - probe_started
             while position < len(pages):
-                if stop[0] or time.monotonic() - started >= limit:
+                if stop[0] or time.monotonic() - started >= limit or (stop_after_chunks is not None and new_chunks >= stop_after_chunks):
                     break
                 end = min(position + chunk_size, len(pages))
                 tick = time.monotonic()
@@ -162,6 +166,8 @@ def _encode_and_finish(config, pages, output, work, run, chunks, position, chunk
                 segment['encoding_seconds'] += elapsed
                 segment['cache_write_seconds'] += time.monotonic() - tick
                 chunks.append(record)
+                new_chunks += 1
+                segment['new_chunks'] = new_chunks
                 position = end
                 segment['end_page'] = position
                 segment['seconds_so_far'] = time.monotonic() - started
@@ -173,7 +179,7 @@ def _encode_and_finish(config, pages, output, work, run, chunks, position, chunk
         segment['end_page'] = position
         if position != len(pages):
             return {'complete': False, 'completed_pages': position, 'pages': len(pages), 'work': str(work),
-                    'reason': 'pause or time limit; resume with the same command and --resume'}
+                    'reason': 'chunk limit' if stop_after_chunks is not None and new_chunks >= stop_after_chunks else 'pause or time limit; resume with the same command and --resume'}
         tick = time.monotonic()
         arrays = [np.load(work / 'chunks' / f"{r['start']:08d}.npy", allow_pickle=False) for r in chunks]
         vectors = np.concatenate(arrays)

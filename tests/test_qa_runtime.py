@@ -341,6 +341,27 @@ class BudgetAndProviderTests(unittest.TestCase):
 
 
 class ScoringTests(unittest.TestCase):
+    def test_legacy_jrc_unanswerable_with_and_without_reference_facts(self):
+        for task_id in ('jrc-37', 'jrc-40'):
+            row = self.row()
+            row['task'] = {'task_id': task_id, 'answerable': False, 'reference_facts': []}
+            review = self.review(row)
+            with self.assertRaisesRegex(ValueError, '覆盖度应为 null'):
+                summarize_attempts([row], 1, [review])
+            review['answer_coverage'] = None
+            review['not_applicable']['answer_coverage'] = 'no required facts'
+            summarize_attempts([row], 1, [review])
+            with self.assertRaisesRegex(ValueError, '不自动获得'):
+                summarize_attempts([row], 1, [dict(review, fact_correctness=1)])
+        for task_id in ('jrc-38', 'jrc-39'):
+            row['task'] = {'task_id': task_id, 'answerable': False, 'reference_facts': ['explain missing evidence']}
+            review['answer_coverage'] = None
+            review['not_applicable']['answer_coverage'] = 'test invalid null with required facts'
+            with self.assertRaisesRegex(ValueError, '不能设为不适用'):
+                summarize_attempts([row], 1, [review])
+            review = self.review(row)
+            summarize_attempts([row], 1, [review])
+
     def row(self,attempt=1):
         r=result('api_timeout' if attempt==1 else 'answered')
         return dict(key=job()['key'],task=job()['task'],attempt=attempt,state='finished',result=r,answer_digest=digest(r['answer']))

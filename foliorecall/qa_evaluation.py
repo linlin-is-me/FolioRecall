@@ -118,7 +118,7 @@ def summarize_attempts(attempts, planned, reviews=None, planned_keys=None, ledge
             raise ValueError('存在必需事实时，覆盖度不能设为不适用')
         if task.get('reference_facts') and not row['result']['answer']['claims'] and review['answer_coverage'] != 0:
             raise ValueError('存在必需事实时，空答案覆盖度必须为零')
-        if task.get('answerability')=='insufficient' and not task.get('reference_facts'):
+        if (task.get('answerability')=='insufficient' or task.get('answerable') is False) and not task.get('reference_facts'):
             if review['answer_coverage'] is not None:
                 raise ValueError('完全无答案任务没有必需事实，覆盖度应为 null')
             if not row['result']['answer']['claims'] and any(review[m] is not None for m in ('fact_correctness','citation_support')):

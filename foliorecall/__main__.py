@@ -83,6 +83,7 @@ def main():
             command.add_argument("--output", required=True)
             command.add_argument("--resume", action="store_true")
             command.add_argument("--chunk-size", type=int, default=64)
+            command.add_argument("--stop-after-chunks", type=int, help="Pause after this many newly saved chunks")
             command.add_argument("--max-seconds", type=float)
         elif name in ("query", "evaluate"):
             command.add_argument("--index", required=True)
@@ -174,7 +175,7 @@ def main():
     query_config = read_json(args.query_config) if getattr(args, "query_config", None) else config
     if args.command == "index":
         from .indexing import build_index
-        result = build_index(config, args.pages, args.output, args.resume, args.chunk_size, args.max_seconds)
+        result = build_index(config, args.pages, args.output, args.resume, args.chunk_size, args.max_seconds, args.stop_after_chunks)
         print(json.dumps(result, indent=2))
         return 0 if result['complete'] else 75
     if args.command == "query":
