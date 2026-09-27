@@ -86,7 +86,7 @@ def grouped(rows, review_map):
     out['language'] = {'assessable': len(language), 'correct': sum(r['language_ok'] is True for r in language)}
     out['resources'] = {'actual_requests': sum(a['result']['actual_model_requests'] for a in terminal),
         'known_cny': sum(a['result']['estimated_cost_cny'] for a in terminal),
-        'searches': sum(a['result']['searches'] for a in terminal),
+        'searches': sum(a['result']['actual_searches'] for a in terminal),
         'read_pages': sum(len(a['result']['evidence']) for a in terminal),
         'timing': {name: sum(a['result'].get('timing', {}).get(name, 0) for a in terminal)
                    for name in sorted({k for a in terminal for k in a['result'].get('timing', {})})},

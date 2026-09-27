@@ -25,7 +25,7 @@ class AcceptanceTests(unittest.TestCase):
 
     def row(self, index, reason='answered', attempt=1):
         r = result(reason)
-        r.update(actual_model_requests=1, searches=1, evidence=[], translation_status='not_needed')
+        r.update(actual_model_requests=1, searches=1, actual_searches=1, evidence=[], translation_status='not_needed')
         return {'key': self.keys[index], 'attempt': attempt, 'state': 'finished', 'task': self.jobs[index]['task'],
                 'result': r, 'answer_digest': digest(r['answer'])}
 
@@ -107,6 +107,17 @@ class AcceptanceTests(unittest.TestCase):
         self.assertIsNone(out['metrics']['fact_correctness']['mean'])
         self.assertEqual(out['metrics']['answer_coverage']['denominator'], 1)
         self.assertEqual(out['language']['assessable'], 0)
+
+    def test_search_totals_count_only_each_attempts_new_searches(self):
+        first = self.row(0)
+        retry = self.row(0, attempt=2)
+        retry['result'].update(searches=2, actual_searches=1)
+        self.assertEqual(grouped([first], {})['resources']['searches'], 1)
+        self.assertEqual(grouped([retry], {})['resources']['searches'], 1)
+        self.assertEqual(grouped([first, retry], {})['resources']['searches'], 2)
+        retry['result'].update(searches=1, actual_searches=0)
+        self.assertEqual(grouped([retry], {})['resources']['searches'], 0)
+        self.assertEqual(grouped([first, retry], {})['resources']['searches'], 1)
 
     def test_translation_and_qa_costs_deduplicated_with_unknown_preserved(self):
         atomic_json(self.root/'agent.json', {'ledger': 'test', 'phase_budget_cny': CAP})
