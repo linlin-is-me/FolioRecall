@@ -8,6 +8,7 @@ PROMPT = 'Translate the user question into an English document search query. Ret
 
 
 def translation_identity(question, config):
+    config = config.get('translation_source_config', config)
     return digest({'question':question, 'prompt':PROMPT,
                    'request_max_tokens':min(2048,config['max_output_tokens']),
                    'timeout':min(config['request_timeout'],config['task_timeout']),

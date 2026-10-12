@@ -66,11 +66,21 @@ def batch_boundary(root, identity, jobs, units, resume, retry_one=False):
 
 def forecast(root, jobs=None, units=None):
     root = Path(root)
+    from foliorecall.generation import NEW_MODEL, usage_cost, request_reservation
+    config = read_json(root/'agent.json')
+    migration = config['model'] == NEW_MODEL
+    def priced(result):
+        if not migration:
+            return result['estimated_cost_cny']
+        # Unknown reserves remain in the shared balance and fault allowance;
+        # they are not measured token prices for future successful tasks.
+        return sum(usage_cost(c['usage'], NEW_MODEL) if c.get('usage') else 0
+                   for c in result.get('api_calls', []) if c.get('cost_status') != 'not_sent')
     baseline = [read_json(p) for p in (DEVELOPMENT/'baseline/attempts').glob('*/attempt-0001.json')]
     cells = defaultdict(list)
     for a in baseline:
         k = a['key']
-        cells[(k['condition'], k['language'], k['domain'])].append(a['result']['estimated_cost_cny'])
+        cells[(k['condition'], k['language'], k['domain'])].append(priced(a['result']))
     rates = defaultdict(float)
     for (condition, language, _), values in cells.items():
         rates[(condition, language)] = max(rates[(condition, language)], sum(values)/len(values))
@@ -82,7 +92,7 @@ def forecast(root, jobs=None, units=None):
     for a in current:
         bykey[digest(a['key'])].append(a)
         if a['attempt'] == 1:
-            observed[(a['key']['condition'], a['key']['language'])].append(a['result']['estimated_cost_cny'])
+            observed[(a['key']['condition'], a['key']['language'])].append(priced(a['result']))
     for key, values in observed.items():
         rates[key] = max(rates[key], sum(values)/len(values))
     suite = read_json(root/'suite.json')
@@ -99,10 +109,20 @@ def forecast(root, jobs=None, units=None):
     cache = read_json(root/'translations/translations.json') if (root/'translations/translations.json').exists() else {}
     conversion_rate = max(0.011989/40, sum(v['cost_cny'] for v in cache.values())/len(cache) if cache else 0)
     failure_allowance = 2.567539 if remaining else 0.
-    estimate = sum(rates[(k['condition'], k['language'])] for k in remaining) + (40-len(cache))*conversion_rate + failure_allowance
+    probe_allowance = 0.
+    if migration and remaining:
+        frozen = read_json(root/'budget-before.json')
+        from scripts.prepare_qa_development import budget_snapshot
+        old_ids = {c['id'] for c in frozen['calls']}
+        unknown = sum(c['status'] == 'reserved_unknown_charge' and c['id'] not in old_ids
+                      for c in budget_snapshot(config['ledger'])['calls'])
+        failure_allowance = max(0, 3-unknown)*request_reservation(NEW_MODEL, 2048)
+        probe_allowance = 0. if (root/'probe/result.json').exists() else 1.
+    estimate = sum(rates[(k['condition'], k['language'])] for k in remaining) + (40-len(cache))*conversion_rate + failure_allowance + probe_allowance
     return {'remaining_cny': estimate, 'evidence': {'baseline': str(DEVELOPMENT/'baseline'),
         'rates': {'/'.join(k): v for k, v in sorted(rates.items())}, 'remaining_attempts': len(remaining),
         'remaining_translations': 40-len(cache), 'failure_planning_allowance_cny': failure_allowance,
+        'probe_planning_allowance_cny': probe_allowance, 'repriced_model': config['model'],
         'method': 'Maximum of baseline domain means and observed A5 condition/language means; full historical failure allowance retained while unfinished; not a guaranteed bound.'}}
 
 
@@ -202,6 +222,8 @@ def main():
             else:
                 if not budget['passed']:
                     raise ValueError('转换及剩余问答费用预测超过余额')
+                if units[0]['agent'].get('translation_source_config'):
+                    raise ValueError('迁移轮只复用冻结译文，不执行新的转换')
                 from scripts.cache_qa_translations import execute_cache
                 result = execute_cache(units, identity, root/'translations', resume=a.resume,
                                        dry_run=a.dry_run, cooldown_seconds=65)

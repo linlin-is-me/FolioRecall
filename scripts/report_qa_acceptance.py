@@ -19,6 +19,8 @@ def reconcile(root):
     for name in ('translations', 'runs'):
         if (root/name/'manifest.json').exists():
             manifests.append((name, read_json(root/name/'manifest.json')))
+    if (root/'probe/result.json').exists():
+        manifests.append(('probe', read_json(root/'probe/result.json')))
     merged, executions = {}, []
     for name, manifest in manifests:
         ledger = ledger_snapshot([config], manifest['execution_id'])
@@ -29,9 +31,11 @@ def reconcile(root):
         if name == 'runs':
             sources = [read_json(p) for p in sorted((root/'runs/attempts').glob('*/attempt-*.json'))]
             entries = [(a['key'], a['attempt'], a.get('result'), a['state']) for a in sources]
-        else:
+        elif name == 'translations':
             records = read_json(root/'translations/translations.json')
             entries = [({'task_id': k}, 1, v, 'finished') for k, v in records.items()]
+        else:
+            entries = [({'probe': c['probe']}, 1, {'api_calls': [c]}, 'finished') for c in manifest['records']]
         unknown = []
         for key, attempt, result, state in entries:
             if state != 'finished':
@@ -61,13 +65,18 @@ def reconcile(root):
         executions.append({'kind': name, 'execution_id': manifest['execution_id'], 'identity_digest': manifest['identity_digest'],
                            'ledger_ids': sorted(byid), 'unknown_tasks': unknown, 'unlinked_ledger_ids': sorted(unlinked)})
     shared = budget_snapshot(config['ledger'])
-    if config['phase_budget_cny'] != CAP:
+    frozen = read_json(root/'budget-before.json') if (root/'budget-before.json').exists() else {'absolute_cap_cny': CAP}
+    cap = frozen['absolute_cap_cny']
+    if config['phase_budget_cny'] != cap:
         raise ValueError('固定费用上限变化')
     return {'executions': executions, 'calls': list(merged.values()), 'ledger_ids': sorted(merged),
         'known_cny': sum(c['cny'] for c in merged.values() if c['status'] == 'estimated_from_usage'),
         'unknown_reserved_cny': sum(c['cny'] for c in merged.values() if c['status'] == 'reserved_unknown_charge'),
         'occupied_cny': sum(c['cny'] for c in merged.values()),
-        'shared': {'occupied_cny': shared['occupied_cny'], 'cap_cny': CAP, 'remaining_cny': CAP-shared['occupied_cny'],
+        'historical_translation_cny': sum(c['cny'] for e in executions if e['kind'] == 'translations' for c in merged.values() if c['id'] in e['ledger_ids']),
+        'round_incremental_occupied_cny': shared['occupied_cny']-frozen.get('occupied_cny', 0),
+        'historical_occupied_cny': frozen.get('occupied_cny'),
+        'shared': {'occupied_cny': shared['occupied_cny'], 'cap_cny': cap, 'remaining_cny': cap-shared['occupied_cny'],
                    'known_cny': sum(c['cny'] for c in shared['calls'] if c['status'] == 'estimated_from_usage'),
                    'unknown_reserved_cny': sum(c['cny'] for c in shared['calls'] if c['status'] == 'reserved_unknown_charge')}}
 
@@ -171,6 +180,7 @@ def report(root, final=False):
         'condition_pairs': pairs, 'paired_summary': comparisons, 'ledger': ledger,
         'review_digest': digest(reviews), 'cached_chinese_first': sum(a['key']['language'] == 'zh' for a in terminal),
         'translation_seconds': sum(v['seconds'] for v in cache.values()), 'human': 'not_checked',
+        'migration': identity['suite'].get('migration'),
         'scope': ['One frozen independent acceptance round; no post-hoc method or task selection.',
                   'Assistant reference and review, not human ground truth; 40 logical tasks, not 240 independent samples.',
                   'Cached query timing is not full online latency; loading, cooldown and manual waits remain separate.',

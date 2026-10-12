@@ -256,13 +256,30 @@ class BudgetAndProviderTests(unittest.TestCase):
             self.assertEqual(out['estimated_cost_cny'],.001)
             self.assertEqual(out['translation_history']['api_calls'],cache['api_calls'])
 
+    def test_new_model_reuses_cache_resource_debit_once_on_recovery(self):
+        from foliorecall.generation import NEW_MODEL
+        cache = self.cached()
+        options = dict(model=NEW_MODEL, translation_source_config=self.config)
+        first = self.ask(FakeProvider([TaskStopped('api_transport_error', {'reservation_cny':6})]),
+                         question='什么？', translation=cache, **options)
+        self.assertEqual(first['model_requests'],2)
+        self.assertEqual(first['output_tokens'],20)
+        self.assertEqual(first['budget_state']['unknown_output_tokens_reserved'],2048)
+        recovered = self.ask(FakeProvider([message()]),question='什么？',translation=cache,
+                             budget=first['budget_state'],**options)
+        self.assertEqual(recovered['actual_model_requests'],1)
+        self.assertEqual(recovered['model_requests'],3)
+        self.assertEqual(recovered['output_tokens'],25)
+        self.assertEqual(recovered['budget_state']['unknown_output_tokens_reserved'],2048)
+        self.assertEqual(recovered['translation_history']['api_calls'],cache['api_calls'])
+
     def test_legacy_ledger_migration_known_usage_survives_invalid_response(self):
         path=self.config['ledger']
         with sqlite3.connect(path) as db:
             db.execute('CREATE TABLE calls (id TEXT PRIMARY KEY,cny REAL,status TEXT,usage TEXT,at REAL)')
             db.execute('INSERT INTO calls VALUES (?,?,?,?,?)',('old',.01,'estimated_from_usage','{}',1))
         ledger=CostLedger(path,150);self.assertEqual(ledger.total(),.01)
-        provider=object.__new__(Bailian);provider.ledger=ledger;provider.key='mock';provider.base='https://unused';provider.context={'execution_id':'x'}
+        provider=object.__new__(Bailian);provider.config=self.config;provider.ledger=ledger;provider.key='mock';provider.base='https://unused';provider.context={'execution_id':'x'}
         import httpx
         class Client:
             def __init__(self,**kwargs):pass
@@ -292,7 +309,7 @@ class BudgetAndProviderTests(unittest.TestCase):
 
     def test_http_failures_preserve_reservation_retry_after_and_missing_usage(self):
         import httpx
-        provider=object.__new__(Bailian);provider.ledger=CostLedger(self.config['ledger'],150)
+        provider=object.__new__(Bailian);provider.config=self.config;provider.ledger=CostLedger(self.config['ledger'],150)
         provider.key='mock';provider.base='https://unused';provider.context={}
         for response,reason in [(httpx.Response(429,headers={'Retry-After':'120'}),'api_http_429'),
                                 (httpx.Response(200,json={'choices':[]}),'missing_usage'),

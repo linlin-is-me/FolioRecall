@@ -4,6 +4,8 @@ from collections import Counter
 import hashlib
 from pathlib import Path
 import random
+import copy
+import shutil
 
 from foliorecall.io import read_json, read_rows, provenance
 from foliorecall.qa_storage import atomic_json, digest, output_lock
@@ -105,6 +107,71 @@ def prepare(root):
         return {'prepared': str(root), 'planned': 240, 'bound_index': False}
 
 
+def migration_budget(agent, available):
+    if available != CAP:
+        raise ValueError('本轮授权可用额度为62.379233元')
+    before = budget_snapshot(agent['ledger'])
+    before.update(old_absolute_cap_cny=agent['phase_budget_cny'],
+                  absolute_cap_cny=round(before['occupied_cny']+available, 6),
+                  new_spend_limit_cny=available, do_not_rebase_on_resume=True,
+                  minimum_request_space_cny=7.5)
+    return before
+
+
+def prepare_migration(root, source_root, model, available):
+    from foliorecall.generation import NEW_MODEL, read_agent_config, pricing_rule
+    from foliorecall.qa_translation import validate_translation
+    root, source = Path(root).resolve(), Path(source_root).resolve()
+    if model != NEW_MODEL:
+        raise ValueError('本轮只允许已确认的新模型快照')
+    with output_lock(root):
+        if root.exists():
+            raise ValueError('目标目录已存在，禁止再次追加额度')
+        # Old code is retained at its commit. Check frozen inputs, not its obsolete code hashes.
+        protocol = read_json(source/'protocol.json')
+        check_files({p: h for p, h in protocol['sources'].items() if '/scripts/' not in p.replace('\\', '/')})
+        check_files(read_json(source/'index-binding.json')['files'])
+        original = read_agent_config(source/'agent.json')
+        cache = read_json(source/'translations/translations.json')
+        suite = copy.deepcopy(read_json(source/'suite.json'))
+        tasks = read_rows(suite['domains'][0]['spec']['tasks'])
+        if len(tasks) != 40 or set(cache) != {t['task_id'] for t in tasks}:
+            raise ValueError('须完整复用40条冻结题与译文')
+        if not all(validate_translation(cache[t['task_id']], t['question_zh'], original) for t in tasks):
+            raise ValueError('旧译文缺少完整预算或身份不匹配')
+        before = migration_budget(original, available)
+        agent = copy.deepcopy(original)
+        agent.update(model=model, phase_budget_cny=before['absolute_cap_cny'],
+                     final_answer_evidence_check=False, translation_source_config=original,
+                     pricing_rule=pricing_rule(model))
+        suite['suite_id'] = 'qa-acceptance-v2'
+        suite['job_order'] = ordered_keys(suite['suite_id'])
+        suite['common'].update(agent_config=str(root/'agent.json'), probe=str(root/'probe/result.json'))
+        suite['migration'] = {'source_root': str(source), 'translation_execution_id':
+            read_json(source/'translations/manifest.json')['execution_id'],
+            'previous_jrc_answers_seen': True, 'tasks_references_and_prompts_unchanged': True}
+        provenance(root/'preparation', {'scope': 'A5 new-model acceptance; reuse index and frozen translations',
+                    'source_root': str(source), 'new_model': model, 'available_cny': available})
+        atomic_json(root/'agent.json', agent)
+        atomic_json(root/'budget-before.json', before)
+        atomic_json(root/'suite.json', suite)
+        (root/'translations').mkdir()
+        for name in ('manifest.json', 'translations.json'):
+            shutil.copyfile(source/'translations'/name, root/'translations'/name)
+        shutil.copyfile(source/'a6-private-mapping.json', root/'a6-private-mapping.json')
+        paths = [Path(p) for p in protocol['sources'] if '/scripts/' not in p.replace('\\', '/')]
+        paths += [source/'translations'/n for n in ('manifest.json', 'translations.json')]
+        paths += [root/n for n in ('agent.json', 'budget-before.json', 'suite.json', 'a6-private-mapping.json',
+                                   'translations/manifest.json', 'translations/translations.json')]
+        paths += [Path('scripts')/n for n in ('prepare_qa_acceptance.py', 'run_qa_acceptance_segment.py',
+                                             'report_qa_acceptance.py', 'probe_bailian.py')]
+        protocol.update(sources=file_binding(paths), batches=[suite['job_order'][i:i+48] for i in range(0, 240, 48)],
+                        migration=suite['migration'], new_absolute_cap_cny=before['absolute_cap_cny'])
+        atomic_json(root/'protocol.json', protocol)
+        return {'prepared': str(root), 'planned': 240, 'bound_index': False,
+                'absolute_cap_cny': before['absolute_cap_cny'], 'available_cny': available}
+
+
 def bind_index(root):
     root = Path(root)
     with output_lock(root):
@@ -116,6 +183,10 @@ def bind_index(root):
         if len(jobs) != 240 or any(len(u['identity']['status']['corpus_pages']) != 256 for u in units):
             raise ValueError('完整索引与240项验收不匹配')
         files = [INDEX/n for n in ('index.faiss', 'pages.jsonl', 'config.json')]
+        protocol = read_json(root/'protocol.json')
+        if protocol.get('migration'):
+            protocol['sources'].update(file_binding([root/'probe/result.json']))
+            atomic_json(root/'protocol.json', protocol)
         atomic_json(root/'index-binding.json', {'identity_digest_without_cache': digest(identity),
             'files': file_binding(files), 'pages': 256, 'jobs': 240})
         return {'bound_index': True, 'jobs': len(jobs), 'identity_digest_without_cache': digest(identity)}
@@ -144,5 +215,16 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output', required=True)
     p.add_argument('--bind-index', action='store_true')
+    p.add_argument('--source-root')
+    p.add_argument('--model')
+    p.add_argument('--available-budget-cny', type=float)
     a = p.parse_args()
-    print(bind_index(a.output) if a.bind_index else prepare(a.output))
+    if a.bind_index:
+        result = bind_index(a.output)
+    elif a.source_root:
+        result = prepare_migration(a.output, a.source_root, a.model, a.available_budget_cny)
+    else:
+        if a.model or a.available_budget_cny is not None:
+            p.error('迁移参数须与--source-root一起使用')
+        result = prepare(a.output)
+    print(result)

@@ -104,11 +104,41 @@ class TaskStopped(RuntimeError):
         self.record = record or {}
 
 
+NEW_MODEL = 'qwen3.7-plus-2026-05-26'
+
+
+def pricing_rule(model):
+    if model == NEW_MODEL:
+        return {'model': model, 'region': 'cn-beijing', 'currency': 'CNY',
+                'bands': [[256000, 2, 8], [1000000, 6, 24]],
+                'maximum_input_tokens': 991808, 'discounts_included': False}
+    if model == MODEL:
+        return {'model': model, 'region': 'cn-beijing', 'currency': 'CNY',
+                'bands': [[32768, 1, 10], [131072, 1.5, 15], [262144, 3, 30]],
+                'maximum_input_tokens': 262144, 'discounts_included': False}
+    raise ValueError('未配置该模型的计费规则')
+
+
+def usage_cost(usage, model=MODEL):
+    prompt, output = usage.get('prompt_tokens'), usage.get('completion_tokens')
+    if type(prompt) is not int or type(output) is not int or prompt < 0 or output < 0:
+        raise TaskStopped('missing_usage')
+    bands = pricing_rule(model)['bands']
+    _, input_rate, output_rate = next((b for b in bands if prompt <= b[0]), bands[-1])
+    return (prompt * input_rate + output * output_rate) / 1e6
+
+
+def request_reservation(model, max_tokens):
+    rule = pricing_rule(model)
+    _, input_rate, output_rate = rule['bands'][-1]
+    return (rule['maximum_input_tokens'] * input_rate + max_tokens * output_rate) / 1e6
+
+
 def validate_agent_config(config):
     if type(config.get('final_answer_evidence_check', False)) is not bool:
         raise ValueError('final_answer_evidence_check 必须为布尔值')
-    if config.get('provider') != 'bailian' or config.get('model') != MODEL or config.get('region') != 'cn-beijing':
-        raise ValueError('仅支持北京百炼 qwen3-vl-plus-2025-12-19，不能自动替换模型或地域')
+    if config.get('provider') != 'bailian' or config.get('model') not in (MODEL, NEW_MODEL) or config.get('region') != 'cn-beijing':
+        raise ValueError('仅支持已配置的北京百炼固定快照，不能自动替换模型或地域')
     if config.get('temperature') != 0 or config.get('enable_thinking') is not False:
         raise ValueError('必须关闭思考并设置 temperature=0')
     bounds = {'max_searches': 3, 'max_pages': 6, 'max_requests': 8,
@@ -133,9 +163,9 @@ def read_agent_config(path):
 
 class CostLedger:
     """Reservations survive crashes and count as estimates until reconciled."""
-    def __init__(self, path, cap):
+    def __init__(self, path, cap, model=MODEL):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self.path, self.cap = str(path), cap
+        self.path, self.cap, self.model = str(path), cap, model
         with sqlite3.connect(self.path) as db:
             db.execute('CREATE TABLE IF NOT EXISTS calls (id TEXT PRIMARY KEY, cny REAL, status TEXT, usage TEXT, at REAL)')
             columns = {r[1] for r in db.execute('PRAGMA table_info(calls)')}
@@ -164,11 +194,7 @@ class CostLedger:
             return [dict(row) for row in db.execute('SELECT * FROM calls ORDER BY at,id')]
 
     def settle(self, key, usage):
-        prompt, output = usage.get('prompt_tokens'), usage.get('completion_tokens')
-        if type(prompt) is not int or type(output) is not int or prompt < 0 or output < 0:
-            raise TaskStopped('missing_usage')
-        rate = 1 if prompt <= 32768 else 1.5 if prompt <= 131072 else 3
-        estimated = (prompt * rate + output * rate * 10) / 1e6
+        estimated = usage_cost(usage, self.model)
         with sqlite3.connect(self.path) as db:
             db.execute('UPDATE calls SET cny=?, status=?, usage=? WHERE id=?',
                        (estimated, 'estimated_from_usage', json.dumps(usage), key))
@@ -191,18 +217,21 @@ class Bailian:
         allowed = url.hostname == 'dashscope.aliyuncs.com' or bool(url.hostname and url.hostname.endswith('.cn-beijing.maas.aliyuncs.com'))
         if url.scheme != 'https' or not allowed or url.username or url.password or url.query or url.fragment or url.path != '/compatible-mode/v1':
             raise ValueError('需要北京百炼 HTTPS compatible-mode/v1 端点')
-        self.ledger = CostLedger(config['ledger'], config['phase_budget_cny'])
+        self.ledger = CostLedger(config['ledger'], config['phase_budget_cny'], config['model'])
 
     def complete(self, messages, tools, max_tokens, timeout):
         import httpx
-        # Highest published Beijing price band, 256k input and requested output.
-        reservation = (262144 * 3 + max_tokens * 30) / 1e6
-        key = self.ledger.reserve(reservation, getattr(self, 'context', {}))
+        model = self.config['model']
+        rule = pricing_rule(model)
+        reservation = request_reservation(model, max_tokens)
+        key = self.ledger.reserve(reservation, getattr(self, 'context', {}) | {'request_model': model, 'pricing_rule': rule})
         record = {'ledger_id':key, 'reservation_cny':reservation, 'usage':None,
-                  'cost_status':'reserved_unknown_charge', 'max_tokens':max_tokens}
-        payload = {'model': MODEL, 'messages': messages, 'temperature': 0,
-                   'enable_thinking': False, 'max_tokens': max_tokens, 'stream': False,
-                   'vl_high_resolution_images': False}
+                  'cost_status':'reserved_unknown_charge', 'max_tokens':max_tokens,
+                  'request_model':model, 'pricing_rule':rule}
+        payload = {'model': model, 'messages': messages, 'temperature': 0,
+                   'enable_thinking': False, 'max_tokens': max_tokens, 'stream': False}
+        if model == MODEL:
+            payload['vl_high_resolution_images'] = False
         if tools:
             payload['tools'] = tools
             payload['parallel_tool_calls'] = False

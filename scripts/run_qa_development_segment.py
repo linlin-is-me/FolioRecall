@@ -77,7 +77,7 @@ def check_budget(config, frozen, estimated_remaining):
     remaining = frozen['absolute_cap_cny']-snapshot['occupied_cny']
     snapshot.update(remaining_cny=remaining, forecast_before_margin_cny=estimated_remaining,
                     forecast_with_margin_cny=1.25*estimated_remaining,
-                    passed=remaining >= 1.25*estimated_remaining+1.06)
+                    passed=remaining >= 1.25*estimated_remaining+frozen.get('minimum_request_space_cny', 1.06))
     return snapshot
 
 
