@@ -104,7 +104,7 @@ v0.1.0多轮界面另有功能验证，A5不作为新路径的质量基准。已
 
 ## 检索架构与实验
 
-![离线页面教师与在线查询学生](doc/assets/architecture-light.svg)
+![离线页面教师与在线查询学生](doc/assets/architecture-zh-CN-light.svg)
 
 原始Qwen3-VL-Embedding-2B离线编码页面，公开NanoVDR ML在线编码查询。CPU FP32查询复用匹配的原教师索引；LoRA需要另建匹配索引。
 
