@@ -1,2 +1,2 @@
 """FolioRecall: small, source-preserving visual retrieval functions."""
-__version__ = "0.1.0rc2"
+__version__ = "0.1.0rc3"

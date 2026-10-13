@@ -1,7 +1,7 @@
 include AGENTS.md requirements.txt
 recursive-include configs *.json
 recursive-include examples *.json
-recursive-include scripts *.py *.sh *.cjs
+recursive-include scripts *.py *.sh *.cjs *.html
 recursive-include doc *.md *.csv
 recursive-include doc/assets *.png
 recursive-include tests *.py
