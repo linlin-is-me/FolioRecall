@@ -126,6 +126,8 @@ def summarize(root, reviews, output, reviewer_type='human'):
     if output.exists():
         raise ValueError('报告已存在，请使用新路径')
     private, entered = read_json(root / 'private-mapping.json'), read_json(reviews)
+    if entered.get('reviewer_type', 'human') != reviewer_type:
+        raise ValueError('评分来源与声明不匹配；助手复核不得转为人工')
     if entered.get('bundle_id') != private['bundle_id']:
         raise ValueError('人工文件不属于本次匿名材料')
     known = {x['id']: x for x in private['answers']}
@@ -144,6 +146,7 @@ def summarize(root, reviews, output, reviewer_type='human'):
     ar = {(digest(x['key']), x['attempt']): x for p in (source / 'scoring').glob('*.json') for x in [read_json(p)]}
     assistants = [ar[(digest(a['key']), a['attempt'])] for a in attempts]
     validated = summarize_attempts(attempts, 30, humans)
+    validated['semantic_quality_status'] = 'reviewed_complete' if not pending else 'reviewed_subset_only'
     summarize_attempts(attempts, 30, assistants)
     byhuman = {(digest(x['key']), x['attempt']): x for x in humans}
     differences = []

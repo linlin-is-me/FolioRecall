@@ -1,7 +1,7 @@
-include AGENTS.md requirements.txt
+include AGENTS.md requirements.txt README.zh-CN.md
 recursive-include configs *.json
 recursive-include examples *.json
 recursive-include scripts *.py *.sh *.cjs *.html
 recursive-include doc *.md *.csv
-recursive-include doc/assets *.png
+recursive-include doc/assets *.png *.svg
 recursive-include tests *.py

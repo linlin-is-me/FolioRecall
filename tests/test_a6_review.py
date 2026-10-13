@@ -1,8 +1,10 @@
 from copy import deepcopy
+from pathlib import Path
+import tempfile
 import unittest
 
-from scripts.a6_review import convert, rating
-from foliorecall.qa_storage import digest
+from scripts.a6_review import convert, rating, summarize
+from foliorecall.qa_storage import digest, atomic_json
 from foliorecall.qa_evaluation import summarize_attempts
 from tests.test_qa_runtime import job, result
 
@@ -66,6 +68,14 @@ class HumanReviewTests(unittest.TestCase):
         r = convert(self.entry(a), a, 'assistant')
         self.assertEqual(r['reviewer_type'], 'assistant')
         self.assertEqual(r['human'], 'not_checked')
+
+    def test_assistant_export_cannot_be_imported_with_human_default(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            atomic_json(root/'private-mapping.json', {})
+            atomic_json(root/'ratings.json', {'reviewer_type': 'assistant'})
+            with self.assertRaisesRegex(ValueError, '助手复核不得转为人工'):
+                summarize(root, root/'ratings.json', root/'report.json')
 
 
 if __name__ == '__main__':
