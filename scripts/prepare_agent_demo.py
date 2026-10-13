@@ -57,6 +57,8 @@ def prepare(bundle, sources, output):
         {'mode': 'agent', 'question': '分别列出这两份报告支持结论的页码，并说明分析时间范围。', 'followup': True},
         {'mode': 'agent', 'question': 'What is the orbital period of Saturn?', 'new_conversation': True}])
     manifest = read_json(output / 'bundle.json')
+    if 'release_tag' in manifest:
+        manifest['parent_release'] = manifest.pop('release_tag')
     manifest.update(version='0.1.0', status='local release candidate pending review',
                     parent_index='retained cleared 42-page visual index', qa=True)
     write_json(output / 'bundle.json', manifest)

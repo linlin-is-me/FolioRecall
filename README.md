@@ -1,115 +1,94 @@
-<h1 align="center">FolioRecall · 页寻</h1>
-<p align="center"><strong>Visual document retrieval, bilingual RAG and bounded agents</strong></p>
-<p align="center">Find evidence in document text, tables and figures, with original-page citations and structured answers.</p>
+# FolioRecall · 页寻
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-607d8b?style=flat" alt="License: Apache-2.0"></a>
-  <a href="#quick-start"><img src="https://img.shields.io/badge/Tested_Python-3.10-607d8b?style=flat" alt="Tested Python: 3.10"></a>
-  <a href="pyproject.toml"><img src="https://img.shields.io/badge/PyTorch-2.8-607d8b?style=flat" alt="PyTorch: 2.8"></a>
-</p>
-<p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
-<p align="center"><a href="#demo">Demo</a> · <a href="#features">Features</a> · <a href="#quick-start">Quick Start</a> · <a href="#results">Results</a> · <a href="#implementation-and-upstream-work">Contributions</a></p>
+**A document Agent that searches evidence, reads original pages and answers with citations.**
 
-FolioRecall retrieves page evidence before running fixed RAG or a bounded agent. A multimodal teacher indexes pages offline; a lightweight student searches online, optionally combining visual rankings with page-level BM25. English and Chinese questions retrieve English documents, with original-page links and JSON answers.
+English · [简体中文](README.zh-CN.md)
 
-> Source code is public. The `0.1.0rc3` package, 42-page example and release notes are prepared locally; downloadable release assets are not yet published.
+FolioRecall combines visual retrieval and BM25 for documents containing text, tables and figures. Its bounded Agent decides when to search and read again, reports actual execution steps, and supports English and Chinese follow-ups. A local Gradio application keeps the CPU query model and index resident.
 
-## Demo
+> `0.1.0` is a local review candidate. Updated source and release assets have not been published; public asset downloads are not available yet.
 
-A real CPU query over the 42-page example retrieves **physical page 10, Figure 3** from the population report, with its source, preview and JSON.
+## A real document task
 
-<p align="center">
-  <a href="doc/assets/stage4-cpu-demo.png"><img src="doc/assets/stage4-cpu-demo.png" width="640" alt="Actual CPU retrieval showing the document source, physical page number, preview and JSON download."></a>
-</p>
+Ask how two European reports describe working-age population and employment, then ask in Chinese for evidence pages and time ranges. Searches, page reads and model requests appear as they happen, followed by claims, original-page citations and saved JSON.
 
-<details>
-<summary>Actual RAG and Agent screenshots</summary>
+![Actual Agent follow-up and execution steps](doc/assets/v010-agent-followup.png)
 
-Task 9 shows Hybrid RAG with original-page citations; task 22 shows a Chinese Hybrid Agent response using multiple documents. These screenshots come from retained real-use records, without regenerating answers for presentation.
+<details><summary>Actual request progress and insufficient-evidence result</summary>
 
-<a href="doc/assets/a6-rag-jrc09.png"><img src="doc/assets/a6-rag-jrc09.png" width="600" alt="Actual English Hybrid RAG response for task 9 and its cited pages."></a>
-<a href="doc/assets/a6-agent-jrc22.png"><img src="doc/assets/a6-agent-jrc22.png" width="600" alt="Actual Chinese Hybrid Agent response for task 22 with cross-document page evidence."></a>
+![Agent request in progress](doc/assets/v010-agent-running.png)
+![Insufficient evidence for Saturn](doc/assets/v010-insufficient.png)
 
 </details>
 
-[Five-minute demonstration and insufficient-evidence example (Chinese)](doc/项目介绍与面试准备.md#五分钟演示) · [Installed real-use validation (Chinese)](doc/首版使用与评测.md#a6-收尾计划与展示目标)
+[Five-minute demonstration](doc/项目介绍与面试准备.md#五分钟演示) · [Usage and verification](doc/首版使用与评测.md#v010-多轮文档agent与审核候选)
 
-## Features
+## Agent workflow
 
-- **Page and hybrid retrieval:** import PDFs or page images; retrieve with visual embeddings or RRF fusion of visual rankings and BM25.
-- **Bilingual RAG and agents:** fixed RAG reads retrieved pages; agents search and read within request, page and time limits. Chinese questions are translated for retrieval, while answers follow the original question language.
-- **Evidence and structured output:** separate factual claims, read-page citations and unresolved information; navigate to original pages and retain JSON in the CLI and browser.
-- **Local application:** a shared retrieval implementation serves the CLI and a persistent single-model Gradio UI; page encoding saves resumable chunks.
-- **Training and evaluation:** retain LoRA, query distillation, BM25 and neural retrieval comparisons with measured quality, latency and resource use.
+```mermaid
+flowchart TD
+    Q[Question and recent successful turns] --> C{Follow-up?}
+    C -->|Yes| W[One request rewrites an English retrieval query]
+    C -->|No| T[Translate Chinese query if needed]
+    W --> M[Model chooses next action]
+    T --> M
+    M --> S[search_pages: visual + BM25, RRF]
+    M --> P[read_page: page image and text]
+    S --> F[Tool result and remaining resources]
+    P --> F
+    F --> M
+    M --> A[Final claims, current-turn citations and unresolved facts]
+    F -->|Resource limit| A
+    A --> J[Validate and save JSON, display original pages]
+```
 
-## Quick Start
+Fixed RAG reads the top six pages. Agent mode permits three searches, six distinct pages, eight model requests, 8,000 output tokens and 180 seconds of task activity. Progress comes from actual executor callbacks; hidden reasoning is not displayed.
 
-Tested with Python 3.10 and Ubuntu 22.04 / WSL 2. GPU indexing used an RTX 4060 Laptop 8GB; other platforms have not been tested.
+## Implementation and contributions
 
-### CPU retrieval with the local 42-page candidate
+- **Retrieval integration:** page import, resumable encoding, FAISS indexing, page-text alignment and visual/BM25 Top-50 fusion with RRF `k=60`.
+- **Tools and evidence:** search/read feedback, resource limits, current-turn citation permissions, structured answers and SQLite usage accounting.
+- **Multi-turn application:** the latest three successful turns supply context. One request resolves references and translates Chinese follow-ups within the current turn's budget. Previous answers do not grant citation permission.
+- **Local execution:** a worker and queue expose progress; a shared lock serializes retrieval/model access. A disconnected browser does not resend an active request; the worker still saves its terminal result.
+- **Measured delivery:** CLI, resident browser UI, isolated installation, portable examples and paired quality/cost comparisons. Failures and negative training results remain in the records.
 
-Place the candidate wheel and `demo-bundle.zip` in one directory and run there. The first query needs the public student pinned by the configuration; CPU retrieval needs no teacher weights, GPU or generation API.
+Qwen and NanoVDR provide upstream models and weights. Sentence Transformers, FAISS, BM25 and Gradio provide reusable infrastructure. This project's contribution is integration, tool execution, application delivery and controlled comparisons; public-student speedups belong to the upstream model. [Sources](NOTICE) · [Interview material](doc/项目介绍与面试准备.md)
+
+## Quick start
+
+Tested on Python 3.10 and Ubuntu 22.04 / WSL 2. Obtain the reviewed wheel and enhanced `demo-bundle.zip` locally. The 42-page example includes vectors, previews, text and BM25; no GPU indexing or teacher weights are needed. First launch needs the public query student specified by the configuration, or an existing model cache.
 
 ```bash
 python3.10 -m venv .venv
 CPU_PY="$PWD/.venv/bin/python"
 "$CPU_PY" -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-"$CPU_PY" -m pip install 'foliorecall-0.1.0rc3-py3-none-any.whl[demo]'
+"$CPU_PY" -m pip install 'foliorecall-0.1.0-py3-none-any.whl[demo,agent]'
 "$CPU_PY" -m zipfile -e demo-bundle.zip demo-local
 cd demo-local/demo-bundle
 CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall query --index . \
   --config configs/baseline.json --query-config configs/student-ml-cpu.json \
-  'Which figure compares projections of the EU working-age population under baseline and no-migration scenarios?' --json
-CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall serve --index . \
-  --config configs/baseline.json --query-config configs/student-ml-cpu.json --port 7864
+  --retrieval-config hybrid.json \
+  'Which figure compares baseline and no-migration scenarios?' --json
 ```
 
-Open `http://127.0.0.1:7864`. Local assets are not public downloads. Without the candidate, use the source and own-PDF workflow below.
-
-### Source installation and your own PDF
+CPU retrieval needs no generation API. For RAG and Agent, set a Beijing-region Bailian key and start the browser:
 
 ```bash
-git clone https://github.com/linlin-is-me/FolioRecall.git
-cd FolioRecall
-REPO=$(pwd -P)
-python3.10 -m venv .venv-cpu
-CPU_PY="$REPO/.venv-cpu/bin/python"
-"$CPU_PY" -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-"$CPU_PY" -m pip install '.[demo,agent,eval]'
-"$CPU_PY" -m foliorecall --help
+export DASHSCOPE_API_KEY='replace-with-your-key'
+export DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall serve --index . \
+  --config configs/baseline.json --query-config configs/student-ml-cpu.json \
+  --retrieval-config hybrid.json --agent-config configs/agent-demo.json \
+  --public-corpus public-corpus.json --output outputs/chat --port 7864
 ```
 
-Import and index your PDF in a GPU environment, then query with the CPU student. [Installation, PDF indexing and reproduction (Chinese)](doc/首版使用与评测.md#外部获取与复现) do not require unpublished release assets. CPU query support does not imply validated CPU teacher indexing.
+Open `http://127.0.0.1:7864`, select RAG or Agent and submit a question. Ask a follow-up in the same conversation, or select **新建会话** to clear context. Expand the result panel to copy JSON; terminal records are also saved locally. API calls incur charges. The example sets a relative ledger and CNY 20 budget; resetting a conversation does not reset costs.
 
-### RAG and Agent use
+The single-turn `ask` CLI and browser API remain available. [Full usage](doc/首版使用与评测.md) covers source installation and own-PDF indexing. Full JRC documents, full PDFs, model weights and credentials are not included in this candidate.
 
-QA calls a generation API. Prepare the page corpus, its matching visual index and `public-corpus.json` containing page text and sources; hybrid retrieval also needs `hybrid.json`. Set `DASHSCOPE_API_KEY` and `DASHSCOPE_BASE_URL` locally, outside configuration files.
+## Quality, cost and errors
 
-The current example uses `qwen3.7-plus-2026-05-26`, thinking disabled and temperature 0. Use `ask` or `serve --agent-config` with a prepared index; see [QA commands and corpus preparation (Chinese)](doc/首版使用与评测.md#问答开发入口与当前验证边界). The local demonstration reuses the 256-page JRC corpus; the full JRC material, index and credentials are not bundled.
-
-## Architecture
-
-
-<p align="center">
-  <a href="doc/assets/architecture-light.svg">
-    <picture>
-      <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="doc/assets/architecture-mobile-dark.svg">
-      <source media="(max-width: 640px)" srcset="doc/assets/architecture-mobile-light.svg">
-      <source media="(prefers-color-scheme: dark)" srcset="doc/assets/architecture-dark.svg">
-      <img src="doc/assets/architecture-light.svg" width="1040" alt="Offline: import pages, encode them with Qwen3-VL and save the FAISS index and metadata; previews remain separate. Online: NanoVDR ML encodes queries, CPU FAISS ranks pages, and CLI or Gradio returns sources, page numbers and JSON. Gradio reads preview files for display.">
-    </picture>
-  </a>
-</p>
-
-The default combination is **original Qwen3-VL-Embedding-2B for indexing + public NanoVDR ML for GPU BF16 queries**. CPU FP32 queries can reuse the same original-teacher index. LoRA requires its own matching page index; equal embedding dimensions alone do not establish compatibility. Omitting `--query-config` in the CLI retains teacher-based queries.
-
-The project's implementation work covers model integration, index compatibility, resumable data processing, CLI/app retrieval and controlled experiments. The backbone and public query students come from upstream projects.
-
-## Results
-
-### Bilingual QA
-
-Forty fixed questions, two languages and three conditions produced 240 terminal first attempts, all assistant-reviewed; 237 were structurally valid. Required-fact coverage below uses 76 applicable answers per condition, excluding tasks without required facts.
+The **earlier single-turn A5 version** completed 40 questions × two languages × three conditions: 240 terminal first attempts, all assistant-reviewed, 237 structurally valid. Structural validity is not answer accuracy. Required-fact coverage uses 76 applicable answers per condition.
 
 | Condition | Required-fact coverage | Estimated known QA cost (CNY) |
 |---|---:|---:|
@@ -117,9 +96,17 @@ Forty fixed questions, two languages and three conditions produced 240 terminal 
 | Hybrid RAG | 0.736988 | 2.198824 |
 | Hybrid Agent | 0.722295 | 7.352474 |
 
-Agent minus Hybrid RAG coverage is −0.014693 on 76 common pairs, with higher cost and question-dependent gains. Language and condition variants do not make these 240 independent questions. Costs include known QA estimates, excluding translation, probes and unknown reservations. [Full QA metrics, pairs, failures and accounting (Chinese)](doc/首版使用与评测.md#a5-模型迁移与新一轮验收) retain actual denominators. Reviews are assistant judgments with `human=not_checked`; independent human review is optional follow-up.
+Agent minus Hybrid RAG coverage is −0.014693 on 76 common pairs, with higher cost and question-dependent gains. Costs exclude translation, probes and unknown reservations. Forty questions with language/condition variants are not 240 independent questions. Scores are assistant judgments, `human=not_checked`; independent human review is optional. [Full denominators, failures and accounting](doc/首版使用与评测.md#a5-模型迁移与新一轮验收)
 
-The installed rc3 passed two CLI and four actual browser QA cases, covering Chinese conversion, cross-document answers, citation navigation and insufficient evidence. These six cases validate application flows rather than constitute a new independent quality benchmark.
+The v0.1.0 multi-turn interface has separate functional verification; A5 is not a benchmark of this new path. Existing mistakes include omitted qualifications, overbroad conclusions and incorrect insufficiency judgments. A valid page ID alone does not establish semantic support.
+
+Five actual browser turns passed progress, follow-up, reset, citation and JSON checks, using 25 API calls with CNY 0.455042 known estimated cost. The cross-document example read only the population report and omitted employment-report evidence; the follow-up retained that omission. The screenshots preserve this limitation. The Saturn case returned no factual claims and reported insufficient evidence. These cases verify use, not aggregate answer accuracy.
+
+## Retrieval architecture and experiments
+
+![Offline page teacher and online query student](doc/assets/architecture-light.svg)
+
+The original Qwen3-VL-Embedding-2B teacher indexes pages offline; public NanoVDR ML encodes queries online. CPU FP32 queries reuse the matching original-teacher index. LoRA requires a separately matching index.
 
 ### Retrieval, training and query cost
 
@@ -148,33 +135,16 @@ Measured on an **RTX 4060 Laptop 8GB**, batch 1, PyTorch/FAISS threads 4/1, five
 
 [Full results and protocol (Chinese)](doc/首版使用与评测.md#本轮实测结果) include CPU comparisons, paired confidence intervals, per-domain timing, memory, indexing cost and error analysis.
 
-## Implementation and upstream work
+## Scope and limitations
 
-Project work includes document import and recovery, complete model/index integration, visual–BM25 fusion, a bounded Agent tool loop, citation and JSON validation, separated timing and cost records, and CLI, persistent UI and isolated installation. Training and distillation comparisons measure quality–resource tradeoffs.
+- English corpus; Chinese questions and follow-ups retrieve English pages. Native Chinese-document retrieval is unverified.
+- Local single-user application with remote generation. Browser-state conversations clear on refresh; there is no persistent conversation database or multi-user deployment.
+- Answers may misread figures, omit facts or cite insufficient evidence. History resolves references and is not verified factual evidence.
+- Fixed tasks, one training seed and assistant scoring limit generalization claims; upstream training overlap is not fully established.
+- Retrieval incurs no generation charges; Q&A requires a key and service balance. Reranking, ONNX/int8 and unrestricted external tools are not implemented.
 
-Qwen and NanoVDR supply models and weights; Sentence Transformers supplies encoding and training interfaces. FAISS, BM25 and Gradio are reused libraries. Public-student speedups come from the upstream model; this project contributes integration, measured comparisons and application delivery. [Project explanation and interview material (Chinese)](doc/项目介绍与面试准备.md) describe this boundary and the evidence.
+## Documentation and license
 
-## Models & Documentation
+[Usage and experiments](doc/首版使用与评测.md) · [Experiment CSV](doc/experiments.csv) · [Development plan](doc/多模态文档检索项目开发计划.md#当前开发重点) · [Contributing](AGENTS.md)
 
-| Asset | Status | Entry |
-|---|---|---|
-| Original Qwen teacher | Available upstream | [Pinned configuration](configs/baseline.json) |
-| Public NanoVDR students | Available upstream | [ML CPU](configs/student-ml-cpu.json) · [ML GPU](configs/student-ml-cuda.json) |
-| rc3 and 42-page example | Local candidate; assets unpublished | [Usage and presentation (Chinese)](doc/首版使用与评测.md#本地发布准备与求职展示) |
-| LoRA750, distillation step 94 and experiment assets | Historical local candidates; assets unpublished | [Acquisition and reproduction (Chinese)](doc/首版使用与评测.md#外部获取与复现) |
-
-[Experiments](doc/experiments.csv) · [Training and distillation (Chinese)](doc/查询学生与蒸馏.md) · [Development plan (Chinese)](doc/多模态文档检索项目开发计划.md#当前开发重点)
-
-## Limitations
-
-- Automated checks and assistant reviews are complete, but factual errors, omissions and incorrect insufficiency judgments remain. Valid structure or an existing citation does not establish factual support.
-- Chinese questions retrieve English pages; native Chinese-document retrieval is unverified. The application is local and single-user, with remote API generation.
-- Results use fixed tasks and one training seed; upstream training overlap and document-level independence are not fully established. Twenty HR queries were used for earlier workflow checks.
-- LoRA gains vary by domain; continued distillation did not improve retrieval. The public student's upstream teacher instruction differs from this project.
-- GPU teacher indexing and CPU student queries have different resource needs; reranking, ONNX/int8 and multi-user deployment are unimplemented.
-
-## Contributing & License
-
-Report commands, environment and reproducible issues in [Issues](https://github.com/linlin-is-me/FolioRecall/issues). Development conventions are in [AGENTS.md](AGENTS.md).
-
-Project code is [Apache-2.0](LICENSE); upstream sources are credited in [NOTICE](NOTICE). Models and data retain separate licenses. The example preserves European Union attribution and material licenses, excludes known third-party images and contains no full PDFs. The code license does not cover upstream documents.
+Code is [Apache-2.0](LICENSE); upstream models and documents retain separate licenses. The example preserves EU attribution, excludes identified third-party images and includes no full PDFs. [NOTICE](NOTICE) credits upstream sources. Report reproducible issues with commands and environment in [Issues](https://github.com/linlin-is-me/FolioRecall/issues).

@@ -1,115 +1,94 @@
-<h1 align="center">FolioRecall · 页寻</h1>
-<p align="center"><strong>视觉文档检索、双语RAG与有限Agent补查</strong></p>
-<p align="center">检索文档中的文字、表格与图表，返回原页证据、物理页码和结构化回答。</p>
+# FolioRecall · 页寻
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-607d8b?style=flat" alt="许可：Apache-2.0"></a>
-  <a href="#快速开始"><img src="https://img.shields.io/badge/Tested_Python-3.10-607d8b?style=flat" alt="已验证 Python：3.10"></a>
-  <a href="pyproject.toml"><img src="https://img.shields.io/badge/PyTorch-2.8-607d8b?style=flat" alt="PyTorch：2.8"></a>
-</p>
-<p align="center"><a href="README.md">English</a> · <strong>简体中文</strong></p>
-<p align="center"><a href="#演示">演示</a> · <a href="#功能">功能</a> · <a href="#快速开始">快速开始</a> · <a href="#结果">结果</a> · <a href="#个人实现与上游来源">贡献</a></p>
+**检索文档证据、读取原页、执行补查并提供引用的文档Agent。**
 
-FolioRecall先检索页面证据，再执行固定RAG或有限Agent问答。多模态教师离线建库，轻量查询学生在线搜索；可选页面BM25与视觉结果融合。英文和中文问句均可检索英文文档，回答提供可跳转的原页引用和JSON。
+[English](README.md) · 简体中文
 
-> 源码已公开。`0.1.0rc3`、42页示例包和发布说明已在本地整理，附件尚未公开下载。
+FolioRecall结合视觉检索与BM25，处理含文字、表格和图表的文档。受限Agent决定何时继续搜索和读页，界面展示实际执行步骤，支持英文与中文追问。本地Gradio应用常驻CPU查询模型与索引。
 
-## 演示
+> `0.1.0`为本地审核候选。新版源码和发布附件尚未公开，本页暂不提供附件下载链接。
 
-42页示例的真实CPU检索命中人口报告的**物理第10页、Figure 3**，并展示来源、预览和JSON。
+## 一个真实文档任务
 
-<p align="center">
-  <a href="doc/assets/stage4-cpu-demo.png"><img src="doc/assets/stage4-cpu-demo.png" width="640" alt="真实CPU页面检索，显示来源、物理页码、页面预览与JSON下载。"></a>
-</p>
+询问两份欧洲报告如何描述劳动年龄人口与就业变化，再用中文追问证据页和分析时间范围。界面实时显示搜索、读页和模型请求，随后呈现事实声明、原页引用与保存的JSON。
 
-<details>
-<summary>查看真实RAG与Agent问答截图</summary>
+![真实Agent追问与执行步骤](doc/assets/v010-agent-followup.png)
 
-第9题Hybrid RAG展示回答与原页引用；第22题中文Hybrid Agent展示跨文档补查。截图来自已保存的真实使用记录，未为展示重新生成回答。
+<details><summary>实际请求进度与不足回答</summary>
 
-<a href="doc/assets/a6-rag-jrc09.png"><img src="doc/assets/a6-rag-jrc09.png" width="600" alt="第9题英文Hybrid RAG实际回答和页面引用。"></a>
-<a href="doc/assets/a6-agent-jrc22.png"><img src="doc/assets/a6-agent-jrc22.png" width="600" alt="第22题中文Hybrid Agent实际回答和跨文档页面证据。"></a>
+![Agent请求执行中](doc/assets/v010-agent-running.png)
+![土星问题的不足回答](doc/assets/v010-insufficient.png)
 
 </details>
 
-[五分钟演示与不足回答案例](doc/项目介绍与面试准备.md#五分钟演示) · [安装态真实使用结果](doc/首版使用与评测.md#a6-收尾计划与展示目标)
+[五分钟演示与实现讲解](doc/项目介绍与面试准备.md#五分钟演示) · [使用与验证记录](doc/首版使用与评测.md#v010-多轮文档agent与审核候选)
 
-## 功能
+## Agent执行流程
 
-- **页面检索与混合检索：** 导入PDF或页面图像，用视觉向量或BM25与视觉结果的RRF融合返回相关页面。
-- **双语RAG与Agent：** 固定RAG读取检索页面；Agent在搜索、读页、请求和时间限额内补查。中文问句先转为英文检索，按原问题语言回答。
-- **证据与结构化输出：** 回答分列事实声明、已读页面引用和未解决信息，界面可跳转原页，CLI和浏览器保留JSON结果。
-- **本地应用：** CLI与单模型常驻Gradio界面共用检索实现；页面编码分块保存，支持中断续接。
-- **训练与评测：** 保留LoRA、查询蒸馏、BM25与神经检索对照，测量质量、延迟和资源开销。
+```mermaid
+flowchart TD
+    Q[当前问题与最近成功问答] --> C{是否为追问}
+    C -->|是| W[一次请求改写为独立英文检索问句]
+    C -->|否| T[按需转换中文问句]
+    W --> M[模型选择下一动作]
+    T --> M
+    M --> S[search_pages：视觉与BM25融合检索]
+    M --> P[read_page：页面图像与正文]
+    S --> F[工具结果与剩余资源]
+    P --> F
+    F --> M
+    M --> A[事实声明、本轮引用与缺失信息]
+    F -->|资源到限| A
+    A --> J[校验并保存JSON，展示原页]
+```
 
-## 快速开始
+固定RAG读取检索前六页。Agent最多执行三次搜索、读取六个不同页面、发起八次模型请求，输出预算为8000 tokens，任务活动时间上限180秒。进度来自执行器实际回调，不展示模型隐藏思考。
 
-已验证Python 3.10、Ubuntu 22.04／WSL 2；GPU建库使用RTX 4060 Laptop 8GB。其他平台尚未实测。
+## 核心实现与个人贡献
 
-### 42页CPU检索：已有本地候选时
+- **检索装配：** 文档导入、分块恢复编码、FAISS索引、正文与页面绑定，以及视觉和BM25各Top-50的RRF融合，固定 `k=60`。
+- **工具与证据管理：** 搜索和读页反馈、资源限额、本轮引用权限、结构化答案，以及SQLite调用费用记录。
+- **多轮应用：** 最近三轮成功问答提供上下文；一次请求完成指代改写与中文转换，占用当前轮原有资源。历史答案不扩充引用权限。
+- **本地执行：** 工作线程和队列传递实时步骤，共用请求锁串行访问检索模型。浏览器断开不重发任务，后台仍保存终态。
+- **实测与交付：** CLI、常驻浏览器界面、隔离安装、便携示例，以及质量和费用的配对对照；保留失败及训练无收益结果。
 
-将候选包的wheel与`demo-bundle.zip`放入同一目录，在该目录运行。首次加载需要获取配置固定的公开查询学生；CPU检索不需要教师权重、GPU或生成API。
+Qwen与NanoVDR提供上游模型和权重；Sentence Transformers、FAISS、BM25与Gradio提供现成基础设施。本项目贡献是集成、工具执行、应用交付和受控比较，公开学生的加速收益归于上游模型。[来源说明](NOTICE) · [面试材料](doc/项目介绍与面试准备.md)
+
+## 快速体验
+
+已验证Python 3.10、Ubuntu 22.04／WSL 2。取得本地审核wheel与增强版 `demo-bundle.zip`。42页示例含向量、预览、正文与BM25，无需GPU建库或教师权重；首次启动需要配置指定的公开查询学生，已有缓存可直接复用。
 
 ```bash
 python3.10 -m venv .venv
 CPU_PY="$PWD/.venv/bin/python"
 "$CPU_PY" -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-"$CPU_PY" -m pip install 'foliorecall-0.1.0rc3-py3-none-any.whl[demo]'
+"$CPU_PY" -m pip install 'foliorecall-0.1.0-py3-none-any.whl[demo,agent]'
 "$CPU_PY" -m zipfile -e demo-bundle.zip demo-local
 cd demo-local/demo-bundle
 CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall query --index . \
   --config configs/baseline.json --query-config configs/student-ml-cpu.json \
-  'Which figure compares projections of the EU working-age population under baseline and no-migration scenarios?' --json
-CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall serve --index . \
-  --config configs/baseline.json --query-config configs/student-ml-cpu.json --port 7864
+  --retrieval-config hybrid.json \
+  'Which figure compares baseline and no-migration scenarios?' --json
 ```
 
-打开`http://127.0.0.1:7864`。本地候选不等于公开下载；没有附件时可采用下面的源码和自有PDF流程。
-
-### 源码安装与自有PDF
+CPU检索不调用生成API。RAG与Agent需要北京地域百炼密钥：
 
 ```bash
-git clone https://github.com/linlin-is-me/FolioRecall.git
-cd FolioRecall
-REPO=$(pwd -P)
-python3.10 -m venv .venv-cpu
-CPU_PY="$REPO/.venv-cpu/bin/python"
-"$CPU_PY" -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-"$CPU_PY" -m pip install '.[demo,agent,eval]'
-"$CPU_PY" -m foliorecall --help
+export DASHSCOPE_API_KEY='replace-with-your-key'
+export DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall serve --index . \
+  --config configs/baseline.json --query-config configs/student-ml-cpu.json \
+  --retrieval-config hybrid.json --agent-config configs/agent-demo.json \
+  --public-corpus public-corpus.json --output outputs/chat --port 7864
 ```
 
-自有PDF先在GPU环境导入和建库，再用CPU学生查询。[完整安装、PDF建库与复现步骤](doc/首版使用与评测.md#外部获取与复现)不依赖待发布附件。CPU查询能力不表示教师建库也已在CPU验证。
+打开 `http://127.0.0.1:7864`，选择RAG或Agent并提交问题，查看实时步骤；同一会话可追问，新建会话清空上下文。展开结果面板可复制JSON，终态记录同时保存到本地。生成请求计费，示例使用相对账本路径与20元预算，新建会话不清空费用。
 
-### RAG与Agent
+原单轮 `ask` CLI和浏览器API继续可用。[完整使用说明](doc/首版使用与评测.md)提供源码安装与自有PDF建库入口。完整JRC语料、完整PDF、模型权重和凭据不随示例或候选包提供。
 
-问答使用生成API。准备页面库、匹配视觉索引，以及包含页面正文和来源的`public-corpus.json`；混合检索另需`hybrid.json`。环境变量`DASHSCOPE_API_KEY`和`DASHSCOPE_BASE_URL`由使用者在本机设置，不写入配置文件。
+## 质量、费用与误例
 
-当前示例采用`qwen3.7-plus-2026-05-26`，关闭思考、温度0。已有索引可用`ask`或`serve --agent-config`入口，详见[问答命令与资料准备](doc/首版使用与评测.md#问答开发入口与当前验证边界)。本机演示复用256页JRC库；完整JRC材料、索引和凭据不随候选包提供。
-
-## 架构
-
-
-<p align="center">
-  <a href="doc/assets/architecture-zh-CN-light.svg">
-    <picture>
-      <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="doc/assets/architecture-zh-CN-mobile-dark.svg">
-      <source media="(max-width: 640px)" srcset="doc/assets/architecture-zh-CN-mobile-light.svg">
-      <source media="(prefers-color-scheme: dark)" srcset="doc/assets/architecture-zh-CN-dark.svg">
-      <img src="doc/assets/architecture-zh-CN-light.svg" width="1040" alt="离线导入页面，使用 Qwen3-VL 编码并保存 FAISS 索引与元数据，预览文件独立保存。在线使用 NanoVDR ML 编码查询，CPU FAISS 排序页面，CLI 或 Gradio 返回来源、物理页码和 JSON；Gradio 另行读取预览。">
-    </picture>
-  </a>
-</p>
-
-默认采用**原始 Qwen3-VL-Embedding-2B 建库，公开 NanoVDR ML 执行 GPU BF16 查询**。CPU FP32 查询可复用同一原始教师索引。LoRA 需要自身的匹配页面索引，向量维度相同不足以证明兼容。CLI 不传 `--query-config` 时仍使用教师查询。
-
-本项目实现模型接入、索引兼容检查、可恢复数据处理、CLI 与界面检索及受控实验。骨干和公开查询学生来自上游项目。
-
-## 结果
-
-### 双语问答
-
-固定40题、两种语言、三个条件共240项首次尝试，237项结构合法，全部完成助手评审。下表为必需事实覆盖均值，每个条件的实际分母为76；没有必需事实的题目不计入该指标。
+**原单轮A5版本**完成40题、双语、三条件共240项首次终态与助手评审，237项结构合法。结构合法率不等于回答准确率；必需事实覆盖每条件有76项适用结果。
 
 | 条件 | 必需事实覆盖 | 已知问答费用估算（元） |
 |---|---:|---:|
@@ -117,9 +96,17 @@ CPU_PY="$REPO/.venv-cpu/bin/python"
 | Hybrid RAG | 0.736988 | 2.198824 |
 | Hybrid Agent | 0.722295 | 7.352474 |
 
-Agent相对Hybrid RAG的共同配对覆盖差为−0.014693（76对），费用更高，收益随问题变化。40题的语言和条件配对不当作240个独立问题。费用列为已知问答估算，不包含翻译、探针或未知预留；完整四项评分、配对结果、失败与计费口径见[A5报告说明](doc/首版使用与评测.md#a5-模型迁移与新一轮验收)。评分来源为助手，`human=not_checked`；独立人工复核是可选后续。
+Agent对Hybrid RAG的覆盖配对差为−0.014693，共76对，费用更高，收益随问题变化。费用不含转换、探针和未知预留。语言和条件变体不构成240个独立问题。评分来自助手，保持 `human=not_checked`；独立人工复核为可选后续。[完整分母、失败与费用](doc/首版使用与评测.md#a5-模型迁移与新一轮验收)
 
-rc3已有两项CLI、四项实际浏览器问答验证，覆盖中文转换、跨文档回答、引用跳页和不足回答。六项用例只验证使用流程，不构成新的独立质量评测。
+v0.1.0多轮界面另有功能验证，A5不作为新路径的质量基准。已有误例包括遗漏适用条件、证据范围不足却扩大结论，以及不足判断错误；引用ID合法仍需核对语义支持。
+
+五轮真实浏览器问答通过进度、追问、重置、引用和JSON检查，共25次API请求，已知费用估算0.455042元。跨文档用例只读取人口报告，遗漏就业报告证据，追问延续了遗漏；截图保留这项局限。土星问题返回空事实声明与不足判断。这些用例验证使用流程，不代表整体回答准确率。
+
+## 检索架构与实验
+
+![离线页面教师与在线查询学生](doc/assets/architecture-light.svg)
+
+原始Qwen3-VL-Embedding-2B离线编码页面，公开NanoVDR ML在线编码查询。CPU FP32查询复用匹配的原教师索引；LoRA需要另建匹配索引。
 
 ### 检索、训练与查询成本
 
@@ -148,33 +135,16 @@ HR、Computer Science、Finance-EN、Industrial 和 Pharmaceuticals 五个固定
 
 [完整结果与评测协议](doc/首版使用与评测.md#本轮实测结果)包含 CPU 对照、配对置信区间、逐领域计时、内存、建库成本及误例分析。
 
-## 个人实现与上游来源
+## 能力边界
 
-本项目实现文档导入和续接、完整模型与索引接入、视觉与BM25融合、有限Agent工具循环、引用与JSON校验、分项计时、费用记录，以及CLI、常驻界面和隔离安装交付。训练与蒸馏对照用于判断质量和资源取舍。
+- 文档库为英文，中文问题和追问检索英文页面；原生中文文档检索尚未验证。
+- 本地单用户应用，远程API生成；会话保存在浏览器状态，刷新清空，无持久会话数据库或多用户部署。
+- 可能误读图表、遗漏事实或引用不足证据；历史回答用于理解指代，不是已核验事实。
+- 固定任务、单个训练seed和助手评分限制泛化结论，上游训练重叠未完全确认。
+- 检索无生成费用，问答需要密钥和服务余额；未实现重排序、ONNX/int8或任意外部工具。
 
-Qwen和NanoVDR提供模型与权重，Sentence Transformers提供编码和训练接口；FAISS、BM25和Gradio复用现成库。公开学生的编码加速来自上游模型，本项目贡献是接入、实测比较与应用集成。[项目介绍与面试准备](doc/项目介绍与面试准备.md)说明实现范围和实测依据。
+## 文档与许可
 
-## 模型与文档
+[使用与评测](doc/首版使用与评测.md) · [实验CSV](doc/experiments.csv) · [开发计划](doc/多模态文档检索项目开发计划.md#当前开发重点) · [开发约定](AGENTS.md)
 
-| 资产 | 状态 | 入口 |
-|---|---|---|
-| 原始Qwen教师 | 上游可获取 | [固定配置](configs/baseline.json) |
-| 公开NanoVDR学生 | 上游可获取 | [ML CPU](configs/student-ml-cpu.json) · [ML GPU](configs/student-ml-cuda.json) |
-| rc3与42页示例 | 本地候选，附件未发布 | [使用与演示](doc/首版使用与评测.md#本地发布准备与求职展示) |
-| LoRA750、蒸馏94步及实验附件 | 历史本地候选，附件未发布 | [获取与复现](doc/首版使用与评测.md#外部获取与复现) |
-
-[实验记录](doc/experiments.csv) · [训练与蒸馏](doc/查询学生与蒸馏.md) · [开发计划](doc/多模态文档检索项目开发计划.md#当前开发重点)
-
-## 局限
-
-- 已完成自动检查与助手评审，仍有事实误读、遗漏和不足判断错误；结构合法及引用存在不直接证明事实得到支持。
-- 中文问句检索英文页面，原生中文文档检索尚未验证。应用面向本地单用户，生成调用远程API。
-- 结果来自固定任务和单个训练seed；上游训练重叠与文档级独立性未完整核实，HR中20条查询曾用于流程检查。
-- LoRA收益随领域变化，继续蒸馏未改善检索；公开学生的上游教师指令与本项目不同。
-- GPU教师建库与CPU学生查询的资源需求不同；重排序、ONNX/int8和多用户部署尚未实现。
-
-## 参与与许可
-
-可在[Issues](https://github.com/linlin-is-me/FolioRecall/issues)提交命令、环境和可复现问题。开发约定见[AGENTS.md](AGENTS.md)。
-
-自有代码采用[Apache-2.0](LICENSE)，上游来源见[NOTICE](NOTICE)。模型和数据遵循各自许可；示例保留European Union来源及素材许可，剔除已知第三方图片，不附完整PDF。代码许可不覆盖上游文档。
+代码采用[Apache-2.0](LICENSE)，上游模型与资料保留各自许可。示例保留欧盟署名、排除已确认的第三方图像，不含完整PDF；[NOTICE](NOTICE)记录来源。可在[Issues](https://github.com/linlin-is-me/FolioRecall/issues)提供命令、环境和可复现问题。

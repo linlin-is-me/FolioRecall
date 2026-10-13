@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "foliorecall"
 version = "0.1.0"
-description = "Page-level visual document retrieval with independent query students"
+description = "Visual document retrieval with bounded RAG and multi-turn agents"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
