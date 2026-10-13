@@ -161,7 +161,8 @@ Public teacher and student weights are fetched from the model IDs and fixed revi
 
 ## Limitations
 
-- Retrieval is evaluated on English documents and queries. Answer generation, no-answer detection, Chinese retrieval, reranking and ONNX/int8 deployment are not implemented or validated capabilities. An out-of-scope query can still return unrelated pages.
+- Page retrieval benchmarks cover English documents and queries. Bilingual answer generation and insufficient-evidence handling are implemented and assistant-reviewed in A5; factual errors, omissions and incorrect abstention decisions remain. Human review and installed-app acceptance with real QA calls are pending A6.
+- Chinese questions are converted to English before searching English pages; native Chinese-document retrieval remains unvalidated. Reranking and ONNX/int8 deployment are not implemented. Out-of-scope queries can still return unrelated pages.
 - Results use one training seed and fixed benchmark tasks. Twenty HR queries were used for workflow checks; upstream training overlap and document-level independence remain unverified.
 - Public students use a different upstream teacher query instruction; the exact upstream teacher revision and image settings are not fully documented.
 - LoRA gains vary by domain, and continued distillation did not retain public ML quality. Some historical HR indexing resource measurements are missing; the detailed tables keep them missing.
