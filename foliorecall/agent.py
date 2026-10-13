@@ -9,7 +9,7 @@ import time
 
 from .generation import TaskStopped, validate_agent_config, diagnostic_text
 from .query import retrieve
-from .qa_translation import convert_query, validate_translation
+from .qa_translation import convert_query, validate_translation, rewrite_followup_query
 
 TOOLS = [
     {'type': 'function', 'function': {'name': 'search_pages', 'description': 'Search English document pages. Returns candidate metadata and untrusted excerpts, not evidence already read.',
@@ -121,7 +121,7 @@ def validate_answer(value, read_ids):
 
 
 def ask(question, mode, model, query_config, index, pages, agent_config, provider, retrieval=None, evidence_texts=None,
-        budget_state=None, translation=None):
+        budget_state=None, translation=None, conversation=None, on_event=None):
     validate_agent_config(agent_config)
     if mode not in ('rag', 'agent') or not isinstance(question,str) or not question.strip():
         raise ValueError('需要非空问题及 rag 或 agent 模式')
@@ -147,6 +147,13 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
     timings = {'retrieval_seconds': 0., 'page_read_seconds': 0., 'api_seconds': 0.}
     texts = evidence_texts if evidence_texts is not None else retrieval['texts'] if retrieval else {}
     language, contract = answer_contract(question)
+    history = [{k: turn[k] for k in ('question', 'retrieval_query', 'answer')}
+               for turn in (conversation or []) if turn.get('completed')][-3:]
+
+    def emit(event, status, **data):
+        if on_event is not None:
+            on_event({'event': event, 'status': status, 'elapsed_seconds': time.monotonic()-started,
+                      'model_requests': requests, 'searches': searches, **data})
 
     def parse_answer(response, forced_tool_call=False):
         content = response.get('content')
@@ -192,10 +199,12 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
         start = time.monotonic()
         if hasattr(provider, 'context'):
             provider.context = dict(provider.context, request_sequence=requests, phase=phase)
+        emit('model_request', 'started', phase=phase)
         try:
             response = provider.complete(messages, tools, limit,
                                          min(agent_config['request_timeout'], deadline-start))
         except TaskStopped as exc:
+            emit('model_request', 'error', phase=phase, reason=str(exc))
             record = {'attempt':requests, 'phase':phase, 'status':str(exc), 'usage':None,
                       'cost_status':'reserved_unknown_charge', 'max_tokens':limit} | exc.record
             if str(exc) == 'phase_budget_exhausted' and not record.get('ledger_id'):
@@ -218,6 +227,7 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
             raise TaskStopped('missing_usage')
         output_tokens += usage['completion_tokens']
         calls.append({k: v for k,v in response.items() if k != 'message'} | {'attempt':requests,'phase':phase,'status':'received'})
+        emit('model_request', 'completed', phase=phase)
         check_time()
         if output_tokens+unknown_tokens > agent_config['max_output_tokens']:
             raise TaskStopped('output_token_limit')
@@ -231,6 +241,7 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
         if searches >= agent_config['max_searches']:
             raise TaskStopped('search_limit')
         searches += 1
+        emit('search_pages', 'started', query=query)
         ranked, _, timing = retrieve(model, query_config, index, pages, query, 10, retrieval=retrieval)
         timings['retrieval_seconds'] += timing['request_seconds']
         repeated = query.strip().casefold() in searched
@@ -239,6 +250,8 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
                 {'rank': i+1, 'snippet': texts.get(p['page_id'],'')[:500]}
                 for i,p in enumerate(ranked)]
         trace.append({'tool':'search_pages','arguments':{'query':query},'result':rows,'repeated':repeated,'status':'ok'})
+        emit('search_pages', 'completed', query=query,
+             pages=[{k: r[k] for k in ('page_id', 'document_name', 'page_number')} for r in rows])
         check_time()
         return rows
 
@@ -248,9 +261,11 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
             raise ValueError('页面 ID 不在当前库内')
         if pid in read:
             trace.append({'tool':'read_page','arguments':{'page_id':pid},'status':'already_read'})
+            emit('read_page', 'already_read', **{k: mapping[pid].get(k) for k in ('page_id', 'document_name', 'page_number')})
             return {'page_id':pid,'status':'already_read'}, None
         if pid not in cumulative_pages and len(cumulative_pages) >= agent_config['max_pages']:
             raise TaskStopped('page_limit')
+        emit('read_page', 'started', **{k: mapping[pid].get(k) for k in ('page_id', 'document_name', 'page_number')})
         image, record = read_evidence(mapping[pid], agent_config['max_pixels'])
         timings['page_read_seconds'] += record['seconds']
         text = texts.get(pid,'')[:12000]
@@ -259,12 +274,20 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
         read[pid] = result
         cumulative_pages.add(pid)
         trace.append({'tool':'read_page','arguments':{'page_id':pid},'result':result,'image':record,'status':'ok'})
+        emit('read_page', 'completed', **{k: mapping[pid].get(k) for k in ('page_id', 'document_name', 'page_number')})
         check_time()
         return result, image
 
     messages = [{'role':'system','content':ANSWER_RULES}, {'role':'user','content':question}]
     try:
-        if re.search(r'[\u3400-\u9fff]', question):
+        if history:
+            emit('query_rewrite', 'started')
+            translated = rewrite_followup_query(question, history, lambda value: generate(value, phase='query_rewrite'))
+            translation_status = 'contextual_rewrite'
+            emit('query_rewrite', 'completed', query=translated)
+            messages.insert(1, {'role': 'user', 'content': 'PREVIOUS CONVERSATION, CONTEXT ONLY; '
+                             'reread evidence before citing it:\n' + json.dumps(history, ensure_ascii=False)})
+        elif re.search(r'[\u3400-\u9fff]', question):
             if translation is not None and validate_translation(translation,question,agent_config):
                 translation_status = 'cached_quality_only'
                 translated = translation['query']
@@ -289,6 +312,7 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
             messages.append({'role':'system','content':final_answer_contract(contract,read,agent_config.get('final_answer_evidence_check',False))})
             trace.append({'event':'final_answer','status':'started','reason':'fixed_rag',
                           'source_request_sequence':requests,'allowed_evidence_page_ids':sorted(read)})
+            emit('final_answer', 'started', reason='fixed_rag')
             response = generate(messages)
             answer = parse_answer(response)
             reason = 'answered'
@@ -307,6 +331,7 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
                     trace.append({'event':'final_answer','status':'started',
                                   'reason':'natural_no_tool' if force_final == 'natural_no_tool' else 'resource_limit',
                                   'source_request_sequence':requests,'allowed_evidence_page_ids':sorted(read)})
+                    emit('final_answer', 'started', reason=trace[-1]['reason'])
                 response = generate(messages, None if final else TOOLS,
                                     phase='final_answer' if final else 'tool_decision')
                 tool_calls = response.get('tool_calls')
@@ -340,10 +365,12 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
                         force_final = True
                         result = {'error':str(exc)}
                         trace.append({'tool':name,'arguments':params,'status':'limit','error':str(exc)})
+                        emit(name, 'limit', reason=str(exc))
                     except (ValueError, OSError) as exc:
                         # No arbitrary path/error text is echoed into model context.
                         result = {'error':'invalid_tool_arguments_or_unreadable_page'}
                         trace.append({'tool':name,'arguments':params,'status':'error','error':type(exc).__name__})
+                        emit(name, 'error', reason=type(exc).__name__)
                     messages.append({'role':'tool','tool_call_id':call['id'],'content':json.dumps(result,ensure_ascii=False)})
                 messages.extend(images)
     except TaskStopped as exc:
@@ -377,6 +404,10 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
         'unknown_output_tokens_reserved':unknown_tokens, 'searches_used':searches,
         'distinct_page_ids':sorted(cumulative_pages), 'active_seconds_used':spent+result['timing']['task_seconds'],
         'translation_debit':cached_debit, 'budget_snapshot_complete':True}
+    if conversation is not None:
+        result['context_turns'] = len(history)
+    emit('terminal', 'completed' if result['completed'] else 'failed', termination_reason=reason,
+         insufficient_evidence=answer['insufficient_evidence'])
     return result
 
 

@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import time
+import threading
 
 from .io import provenance, read_json, write_json
 from .query import load_retriever, load_search_session, process_memory, retrieve
@@ -108,6 +109,7 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
     examples_path = Path(folder) / 'queries.json'
     examples = [[q['query']] for q in read_json(examples_path)] if examples_path.exists() else []
     temporary = tempfile.TemporaryDirectory(prefix='foliorecall-demo-')
+    request_lock = threading.Lock()
     with gr.Blocks(title='FolioRecall · 页寻', analytics_enabled=False) as app:
         gr.Markdown('# FolioRecall · 页寻\n英文文档页面检索。分数表示相关性，不表示答案正确概率。')
         if retrieval:
@@ -126,30 +128,60 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
             download = gr.File(label='下载结果 JSON', interactive=False)
             def submit(query, k):
                 try:
-                    return display_request(model, query_config, index, pages, query, k, temporary.name, log, retrieval)
+                    with request_lock:
+                        return display_request(model, query_config, index, pages, query, k, temporary.name, log, retrieval)
                 except ValueError as exc:
                     raise gr.Error(str(exc)) from exc
             button.click(submit, [text, top_k], [gallery, table, download, status], api_name='search', concurrency_limit=1, concurrency_id='query')
             text.submit(submit, [text, top_k], [gallery, table, download, status], api_name=False, concurrency_limit=1, concurrency_id='query')
         if provider:
+            from .chat import new_session, stream_chat
             with gr.Tab('文档问答'):
                 gr.Markdown(f'远程服务：北京百炼 `{agent_config["model"]}`。提交问题后，会发送问题、检索摘要，以及最多 6 页公开资料的图像和正文；页面检索页仍为本地处理。')
                 question = gr.Textbox(label='英文或中文问题')
                 mode = gr.Radio(['rag','agent'],value='rag',label='固定 RAG / 有限工具 Agent')
+                history = gr.Chatbot(label='当前会话', height=360, allow_tags=False, elem_id='conversation')
+                session = gr.State(None)
+                gr.Markdown('模型使用最近3轮成功回答理解追问；引用须来自当前轮读取的页面。刷新或新建会话清空上下文，不清空费用。')
+                example_file = Path(folder) / 'qa-examples.json'
+                if example_file.exists():
+                    gr.Examples([[item['question'], item['mode']] for item in read_json(example_file)], inputs=[question, mode])
                 answer_button = gr.Button('向百炼提交问答')
-                answer_html = gr.HTML()
-                record_json = gr.JSON(label='工具记录、终止原因、用量与估算费用')
+                reset_button = gr.Button('新建会话')
+                progress = gr.HTML(elem_id='progress-panel')
+                answer_html = gr.HTML(elem_id='answer-panel')
+                with gr.Accordion('完整JSON、工具记录与费用', open=False):
+                    record_json = gr.JSON(label='工具记录、终止原因、用量与估算费用', elem_id='qa-json')
                 def submit_qa(query, selected_mode):
                     from .agent import ask
                     try:
-                        result = ask(query,selected_mode,model,query_config,index,pages,agent_config,provider,retrieval,evidence_texts)
-                        rendered = qa_display(result,pages)
-                        if output:
-                            write_json(Path(output)/f'qa-{time.time_ns()}.json',result)
+                        with request_lock:
+                            result = ask(query,selected_mode,model,query_config,index,pages,agent_config,provider,retrieval,evidence_texts)
+                            rendered = qa_display(result,pages)
+                            if output:
+                                write_json(Path(output)/f'qa-{time.time_ns()}.json',result)
                         return rendered,result
                     except ValueError as exc:
                         raise gr.Error(str(exc)) from exc
-                answer_button.click(submit_qa,[question,mode],[answer_html,record_json],api_name='ask',concurrency_limit=1,concurrency_id='query')
+                legacy_button = gr.Button(visible=False)
+                legacy_button.click(submit_qa,[question,mode],[answer_html,record_json],api_name='ask',concurrency_limit=1,concurrency_id='query')
+                def chat(query, selected_mode, state):
+                    from .agent import ask
+                    def execute(q, selected, context, event):
+                        return ask(q, selected, model, query_config, index, pages, agent_config, provider,
+                                   retrieval, evidence_texts, conversation=context, on_event=event)
+                    try:
+                        for transcript, rendered, steps, record, updated, busy in stream_chat(
+                                query, selected_mode, state, execute, pages, request_lock, output):
+                            yield transcript, rendered, steps, record, updated, \
+                                gr.Button(interactive=not busy), gr.Button(interactive=not busy)
+                    except ValueError as exc:
+                        raise gr.Error(str(exc)) from exc
+                targets = [history, answer_html, progress, record_json, session, answer_button, reset_button]
+                answer_button.click(chat,[question,mode,session],targets,api_name='chat',concurrency_limit=1,concurrency_id='query')
+                reset_button.click(lambda: ([], '', '', None, new_session()), None,
+                                   [history, answer_html, progress, record_json, session], api_name=False,
+                                   concurrency_limit=1, concurrency_id='query')
     try:
         app.launch(server_name='127.0.0.1', server_port=port, share=False, inbrowser=False)
     finally:

@@ -1,4 +1,4 @@
-include AGENTS.md requirements.txt README.zh-CN.md
+include AGENTS.md requirements.txt README.zh-CN.md .env.example
 recursive-include configs *.json
 recursive-include examples *.json
 recursive-include scripts *.py *.sh *.cjs *.html
