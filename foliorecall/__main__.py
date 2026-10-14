@@ -71,10 +71,11 @@ def main():
     student_train.add_argument("--limit", type=int)
     student_train.add_argument("--max-steps", type=int)
     student_train.add_argument("--micro-batch", type=int, default=32)
+    student_train.add_argument("--depths", type=int, nargs='+', default=[6], help="Distillation exits: 6 (default), 4, or 4 6")
     student_train.add_argument("--max-seconds", type=float, default=3600)
     student_train.add_argument("--resume")
     student_train.add_argument("--stop-after", type=int, help="Pause at this global step without changing the training schedule")
-    student_train.add_argument("--skip-evaluation", action="store_true", help="Only for the initial four-step integration probe")
+    student_train.add_argument("--skip-evaluation", action="store_true", help="Save checkpoints without intermediate development evaluation")
     for name in ("index", "query", "evaluate", "train-smoke", "train"):
         command = sub.add_parser(name)
         command.add_argument("--config", default="configs/lora-baseline.json" if name == "train" else "configs/baseline.json")
@@ -163,7 +164,7 @@ def main():
     if args.command == "distill":
         from .distillation import distill
         result = distill(read_json(args.query_config), args.targets, args.output, args.index, args.data,
-            args.limit, args.max_steps, args.micro_batch, args.max_seconds, args.resume, not args.skip_evaluation, args.stop_after)
+            args.limit, args.max_steps, args.micro_batch, args.max_seconds, args.resume, not args.skip_evaluation, args.stop_after, args.depths)
         print(json.dumps({k: v for k, v in result.items() if k != "log_history"}, indent=2))
         return 0
     if args.command == "import":

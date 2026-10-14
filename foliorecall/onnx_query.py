@@ -16,7 +16,7 @@ class OnnxQueryEncoder:
         from .io import read_json
         root = Path(config['model_path'])
         backbone = read_json(root/'config.json')
-        if tuple(backbone.get(k) for k in ('model_type','n_layers','dim','vocab_size')) != ('distilbert',6,768,30522):
+        if tuple(backbone.get(k) for k in ('model_type','n_layers','dim','vocab_size')) != ('distilbert',config.get('num_layers',6),768,30522):
             raise ValueError('ONNX学生骨干配置不匹配')
         modules = read_json(root/'modules.json')
         if [m['type'].split('.')[-1] for m in modules] != ['Transformer','Pooling','Dense','Dense','Normalize']:

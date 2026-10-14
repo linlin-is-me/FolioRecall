@@ -71,12 +71,14 @@ def validate_resume(output, resume, settings, rows, stop_after=None):
 
 
 def distill(query_config, targets, output, index, data, limit=None, max_steps=None,
-            micro_batch=32, max_seconds=3600, resume=None, evaluate_checkpoints=True, stop_after=None):
+            micro_batch=32, max_seconds=3600, resume=None, evaluate_checkpoints=True, stop_after=None, depths=(6,)):
     from datasets import Dataset
     from sentence_transformers import SentenceTransformerTrainer, SentenceTransformerTrainingArguments
     from transformers import TrainerCallback, enable_full_determinism
 
     started = time.monotonic()
+    from .multidepth import validate_depths, MultiDepthAlignmentLoss, MultiDepthTrainer, export_exit
+    depths = validate_depths(depths, query_config)
     if stop_after is not None and stop_after < 1:
         raise ValueError('stop-after 必须为正')
     if micro_batch not in (8, 16, 32):
@@ -97,6 +99,8 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
         "weight_decay": 0.01, "warmup_ratio": 0.03, "seed": 42, "effective_batch": 32,
         "micro_batch": micro_batch, "max_steps": max_steps, "data": str(Path(data).resolve()),
         "index": str(Path(index).resolve()), "evaluate_checkpoints": evaluate_checkpoints}
+    if depths != (6,):
+        settings['depths'] = list(depths)
     if resume:
         resume = Path(resume).resolve()
         validate_resume(output, resume, settings, rows, stop_after)
@@ -115,6 +119,9 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
     if resume:
         train_config["model_path"] = str(resume)
     model = load_query_encoder(train_config)
+    loss = MultiDepthAlignmentLoss(model, resume) if depths == (4, 6) else QueryAlignmentLoss(model)
+    loss.to(model.device)
+    head_before = {n: p.detach().cpu().clone() for n, p in loss.head4.named_parameters()} if depths == (4, 6) else {}
     torch.cuda.reset_peak_memory_stats()
     loading_seconds = time.monotonic()-started
     projection_names = projection_parameter_names(model)
@@ -139,6 +146,12 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
                     "nonzero": name in nonzero} for name, g in gradients.items()})
                 if not any("attention.q_lin" in n for n in nonzero) or not projection_names.issubset(nonzero):
                     raise ValueError("骨干或投影没有有效梯度")
+                if head_before:
+                    head_gradients = {n: p.grad for n, p in loss.head4.named_parameters()}
+                    if any(g is None or not torch.isfinite(g).all() or not torch.count_nonzero(g).item()
+                           for g in head_gradients.values()):
+                        raise ValueError('四层出口投影没有有效梯度')
+                    write_json(run/'head4-gradients.json', {n: float(g.abs().max()) for n,g in head_gradients.items()})
                 gradient_checks.append({"finite_gradients": len(gradients), "nonzero_gradients": len(nonzero)})
 
         def on_step_end(self, args, state, control, **kwargs):
@@ -153,6 +166,8 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
             export_config = dict(query_config, model_path=str(folder), dtype="bfloat16", batch_size=1)
             write_json(folder / "query-config.json", export_config)
             write_json(folder / "training-source.json", {"settings": str(output / "settings.json"), "run": str(run)})
+            if head_before:
+                loss.save_head(folder)
             remaining = effective_limit-(time.monotonic()-started)
             if evaluate_checkpoints and remaining > 120:
                 # A fresh BF16 model matches the public baseline's inference path. This
@@ -177,8 +192,9 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
         seed=42, data_seed=42, full_determinism=True, save_strategy="epoch", logging_steps=1,
         report_to="none", disable_tqdm=True, dataloader_num_workers=0, dataloader_pin_memory=False,
         optim="adamw_torch", remove_unused_columns=False)
-    trainer = SentenceTransformerTrainer(model=model, args=arguments, train_dataset=dataset,
-        loss=QueryAlignmentLoss(model), callbacks=[Checks()])
+    trainer_type = MultiDepthTrainer if head_before else SentenceTransformerTrainer
+    trainer = trainer_type(model=model, args=arguments, train_dataset=dataset,
+        loss=loss, callbacks=[Checks()])
     try:
         trainer.train(resume_from_checkpoint=str(resume) if resume else None)
         complete = trainer.state.global_step >= trainer.state.max_steps
@@ -192,6 +208,16 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
         updated = [name for name, value in selected.items() if not torch.equal(value, after[name].detach().cpu())]
         if not any("attention.q_lin" in name for name in updated) or not projection_names.issubset(updated):
             raise ValueError("骨干或投影未实际更新")
+        exits = {}
+        if head_before:
+            head_after = dict(loss.head4.named_parameters())
+            if any(torch.equal(v, head_after[n].detach().cpu()) for n,v in head_before.items()):
+                raise ValueError('四层出口投影未实际更新')
+            # Checkpoint heads support resume; deploy packages only contain one exit.
+            for depth in depths:
+                _, cfg = export_exit(model, depth, output/f'exports/depth-{depth}', query_config,
+                                     loss.head4 if depth == 4 else None)
+                exits[str(depth)] = cfg
         # A small CPU roundtrip is independent of BF16 inference rounding.
         model.to(device="cpu", dtype=torch.float32).eval()
         probe = [r["query"] for r in rows[:4]]
@@ -210,6 +236,7 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
             "gradient_checks": gradient_checks, "checked_updated_tensors": updated,
             "reload_max_abs_diff": delta, "evaluations": evaluations, "log_history": trainer.state.log_history,
             "training_dtype": "FP32 master weights, BF16 autocast", "final": str(final),
+            "depths": list(depths), "exports": exits, "loss": loss.get_config_dict(),
             "selection": "diagnostic only; confirmed public ML deployment is unchanged"}
         write_json(output / "result.json", result)
         write_json(run / "result.json", result)

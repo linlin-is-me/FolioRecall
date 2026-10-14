@@ -26,6 +26,9 @@ def validate_query_config(config, teacher_config):
 
 
 def validate_backend(config):
+    depth = config.get('num_layers', 6)
+    if type(depth) is not int or depth not in (4, 6):
+        raise ValueError('查询学生 num_layers 必须为4或6')
     backend = config.get('backend', 'torch')
     if backend not in ('torch', 'onnx'):
         raise ValueError('查询 backend 必须为 torch 或 onnx')
@@ -54,6 +57,8 @@ def load_query_encoder(config):
                     "dimension", "pooling", "projection", "normalize", "max_length", "prompt"):
             if saved.get(key) != config.get(key):
                 raise ValueError(f"本地学生包与查询配置不匹配: {key}")
+        if saved.get('num_layers', 6) != config.get('num_layers', 6):
+            raise ValueError('本地学生包与查询配置不匹配: num_layers')
     options = {}
     kwargs = {"dtype": getattr(torch, config["dtype"]), "attn_implementation": "sdpa"}
     if config.get('backend') == 'onnx':
@@ -81,7 +86,7 @@ def load_query_encoder(config):
     if model.max_seq_length != config["max_length"] or any(model.prompts.values()):
         raise ValueError("学生长度或 prompt 与发布配置不匹配")
     backbone = model[0].model.config
-    if (backbone.model_type, backbone.n_layers, backbone.dim, backbone.vocab_size) != ("distilbert", 6, 768, 30522):
+    if (backbone.model_type, backbone.n_layers, backbone.dim, backbone.vocab_size) != ("distilbert", config.get('num_layers', 6), 768, 30522):
         raise ValueError("学生骨干与发布配置不匹配")
     model.eval()
     return model
