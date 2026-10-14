@@ -1,6 +1,6 @@
 # FolioRecall 标识
 
-完整字标由项目名称 FolioRecall 变形构成：F 的上横融入翻页折角，R 左侧的竖立书本构成竖笔，右侧放大镜构成圆部与斜腿；末尾两个 l 保留清晰竖笔，以底部页边和书脊连接成一本书。首字母 F 单独用于浏览器图标。采用深绿与灰绿，图形保留透明底；页寻使用界面文字显示。完整项目名同时保留在README标题、图片替代文字和浏览器标题中。
+完整字标由项目名称 FolioRecall 变形构成：F 的上横融入翻页折角，R 左侧的竖立书本构成竖笔，右侧放大镜构成圆部与斜腿；末尾两个 l 保留清晰竖笔，以底部页边和书脊连接成一本书。首字母 F 单独用于浏览器图标。书本与字母采用深绿和灰绿；放大镜使用黑色边框、棕色镜柄与天蓝色镜片，图形外围保留透明底；页寻使用界面文字显示。完整项目名同时保留在README标题、图片替代文字和浏览器标题中。
 
 资源由 OpenAI 内置 image_gen 生成，未使用上游项目标识。原图为 `foliorecall-wordmark.png` 和 `foliorecall-lettermark.png`；前端与README使用 `foliorecall/assets/wordmark.png`，浏览器图标使用同目录 `logo.png`。附带发布包的 `branding` 目录提供原图和显示尺寸。
 
@@ -58,4 +58,12 @@ Precise logo correction. Keep the supplied artwork unchanged EXCEPT complete the
 
 ```text
 Use case: logo-brand. Precisely edit the supplied FolioRecall logo. Follow this spatial construction literally. R: ONE SLIM CLOSED BOOK STANDING VERTICALLY ON THE LEFT forms the full-height LEFT STEM of the capital R. Give this left book a recognizable narrow rectangular cover, tiny top/bottom page-edge marks and one sage inset spine line. ON THE RIGHT OF THIS VERTICAL BOOK is ONE MAGNIFYING GLASS: circular transparent lens in the upper-right and straight handle descending diagonally lower-right, together forming the R bowl and leg. The magnifier touches the upper portion of the LEFT book so together they unmistakably spell capital R. REMOVE the current book-shaped protrusion and page stripes on the RIGHT of the lens. There must be NO BOOK ON THE RIGHT OF THE R; the BOOK IS ITS LEFT STEM, the MAGNIFIER IS ITS RIGHT HALF. Terminal ll: keep TWO clear tall lowercase l stems with a visible narrow central separation, equal to the l height earlier in Folio. Together these two l strokes must also resemble ONE upright slightly open book, not two separate closed books. Add restrained thin page contours and a shallow connecting bottom cover/central gutter to suggest two facing halves of ONE book. The two dominant vertical strokes must remain readable as ll first, with the single-book reading second; do not replace ll with a squat generic open-book icon. Preserve folded F, remaining letters, original forest-teal/sage palette, transparent background, clean geometric typography and horizontal wordmark. Correct readable name FolioRecall. Flat graphic, no shadows, no gradients, no captions or additional icons.
+```
+
+## 放大镜配色修订
+
+按用户要求，仅将放大镜改为黑框、棕柄、天蓝色镜片。结构保持左书右镜及末尾ll单本书。使用内置image_gen，提示如下。
+
+```text
+Precise recolor edit of this existing FolioRecall logo. Preserve the exact shapes, layout, letterforms, folded F, upright book forming the left stem of R, and terminal ll-book. Change ONLY the magnifying glass forming the RIGHT HALF of the central R: (1) make the circular lens frame BLACK (#111111); (2) make the entire diagonal magnifying-glass HANDLE BROWN (#8B5A2B), not sage or green, retaining its existing outline/shape; (3) fill the currently empty circular lens interior with SKY BLUE (#87CEEB) so it visibly reads as a glass lens. Flat clean blue fill, no invented objects or lettering inside the lens, no gradients or photorealistic reflections. Do not recolor the upright BOOK TO THE LEFT of the magnifier; that book and ALL other letters remain their original dark teal and sage. Outside the artwork maintain genuine background transparency. Preserve the integrated capital R silhouette and the legible final ll that together form a book. No added symbols, no shadow, no new text, no other redesign. One horizontal wordmark at the same composition.
 ```
