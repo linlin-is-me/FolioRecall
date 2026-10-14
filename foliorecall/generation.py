@@ -135,6 +135,8 @@ def request_reservation(model, max_tokens):
 
 
 def validate_agent_config(config):
+    if type(config.get('evidence_coverage_search', False)) is not bool:
+        raise ValueError('evidence_coverage_search 必须为布尔值')
     if type(config.get('final_answer_evidence_check', False)) is not bool:
         raise ValueError('final_answer_evidence_check 必须为布尔值')
     if config.get('provider') != 'bailian' or config.get('model') not in (MODEL, NEW_MODEL) or config.get('region') != 'cn-beijing':

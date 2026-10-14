@@ -173,8 +173,11 @@ def provider_factory(units):
             loading = 0.
         provider.context = dict(job['key'],attempt=attempt,execution_id=job['execution_id'])
         index,pages,retrieval = session
+        options = {'conversation': job['conversation']} if 'conversation' in job else {}
+        if 'on_event' in job:
+            options['on_event'] = job['on_event']
         result = ask(job['question'],unit['spec']['mode'],model,unit['student'],index,pages,
-                     unit['agent'],provider,retrieval,unit['texts'],budget,job.get('translation'))
+                     unit['agent'],provider,retrieval,unit['texts'],budget,job.get('translation'), **options)
         result['loading_seconds'] = loading
         return result
     return execute

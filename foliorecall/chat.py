@@ -39,7 +39,8 @@ def messages_for(session):
 
 def progress_html(events):
     labels = {'queued': '等待执行', 'model_request': '模型请求', 'query_rewrite': '追问改写',
-              'search_pages': '搜索页面', 'read_page': '读取页面', 'final_answer': '最终回答', 'terminal': '任务结束'}
+              'search_pages': '搜索页面', 'read_page': '读取页面', 'source_access_status': '来源读取状态',
+              'final_answer': '最终回答', 'terminal': '任务结束'}
     phases = {'query_translation': '中文转换', 'query_rewrite': '追问改写',
               'tool_decision': '选择工具', 'final_answer': '最终回答'}
     statuses = {'started': '执行中', 'completed': '完成', 'already_read': '本轮已读',
@@ -54,6 +55,10 @@ def progress_html(events):
             detail = f"{event.get('document_name') or event['page_id']} · 物理第{event.get('page_number', '?')}页"
         if event.get('pages'):
             detail += ' · 返回' + str(len(event['pages'])) + '页'
+        if 'sources' in event:
+            detail = '；'.join((s.get('document_name') or s['doc_id']) + '：候选物理页' +
+                ','.join(str(p['page_number']) for p in s['retrieved_pages']) + '，已读物理页' +
+                (','.join(str(p['page_number']) for p in s['read_pages']) or '无') for s in event['sources']) or '尚无候选或已读页面'
         if event.get('termination_reason'):
             detail = event['termination_reason']
         if event.get('reason'):

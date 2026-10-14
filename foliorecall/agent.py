@@ -120,6 +120,31 @@ def validate_answer(value, read_ids):
     return value
 
 
+EVIDENCE_COVERAGE_POLICY = (
+    'For questions comparing sources, subjects, periods or conditions, gather evidence for each requested part. '
+    'The application supplies SOURCE_ACCESS_STATUS describing candidates returned and pages successfully read in this turn. '
+    'A source appearing in search results, or a page being read, does not establish relevant evidence or answer coverage. '
+    'Inspect candidate relevance: references, covers and mentions of another report may not support its substantive findings. '
+    'Prefer reading relevant candidates for a missing part; if useful body evidence is absent, use a targeted English search '
+    'for that part or source within the existing budgets. Do not visit sources merely to increase their count. '
+    'For a single-source question, do not manufacture a multi-source requirement. Preserve subjects, time ranges and conditions; '
+    'put remaining unsupported parts in unresolved. Reserve the final request; do not add separate planning or scoring requests.')
+
+
+def source_access_status(mapping, retrieved_ids, read_ids):
+    """Access metadata only: neither recall relevance nor semantic coverage is inferred."""
+    sources = {}
+    for field, ids in (('retrieved_pages', retrieved_ids), ('read_pages', read_ids)):
+        for pid in ids:
+            page = mapping[pid]
+            doc = sources.setdefault(page['doc_id'], {'doc_id': page['doc_id'],
+                'document_name': page.get('document_name'), 'retrieved_pages': [], 'read_pages': []})
+            item = {'page_id': pid, 'page_number': page.get('page_number')}
+            if item not in doc[field]:
+                doc[field].append(item)
+    return list(sources.values())
+
+
 def ask(question, mode, model, query_config, index, pages, agent_config, provider, retrieval=None, evidence_texts=None,
         budget_state=None, translation=None, conversation=None, on_event=None):
     validate_agent_config(agent_config)
@@ -135,6 +160,8 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
     if len(mapping) != len(pages):
         raise ValueError('重复页面 ID')
     trace, calls, read, searched = [], [], {}, []
+    coverage_enabled = mode == 'agent' and agent_config.get('evidence_coverage_search', False)
+    retrieved_ids, coverage_message = {}, None
     output_tokens = previous.get('known_output_tokens',0)
     unknown_tokens = previous.get('unknown_output_tokens_reserved',0)
     requests, searches = previous.get('requests_used',0), previous.get('searches_used',0)
@@ -249,6 +276,8 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
         rows = [{k: p.get(k) for k in ('page_id','document_name','page_number','score','score_kind')} |
                 {'rank': i+1, 'snippet': texts.get(p['page_id'],'')[:500]}
                 for i,p in enumerate(ranked)]
+        if coverage_enabled:
+            retrieved_ids.update((p['page_id'], None) for p in rows)
         trace.append({'tool':'search_pages','arguments':{'query':query},'result':rows,'repeated':repeated,'status':'ok'})
         emit('search_pages', 'completed', query=query,
              pages=[{k: r[k] for k in ('page_id', 'document_name', 'page_number')} for r in rows])
@@ -318,12 +347,30 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
             reason = 'answered'
         else:
             messages.append({'role':'system','content':f'You may search at most {agent_config["max_searches"]} times and read at most {agent_config["max_pages"]} distinct pages. Use tools to gather evidence. When finished gathering, stop calling tools; a separate no-tools request will collect the final answer. Use the English retrieval query for the initial search.'})
+            if coverage_enabled:
+                messages.append({'role': 'system', 'content': EVIDENCE_COVERAGE_POLICY})
             while answer is None:
                 remaining = {'requests':agent_config['max_requests']-requests,
                              'output_tokens':agent_config['max_output_tokens']-output_tokens-unknown_tokens,
                              'searches':agent_config['max_searches']-searches,
                              'distinct_pages':agent_config['max_pages']-len(cumulative_pages)}
                 final = force_final or remaining['requests'] <= 1 or remaining['output_tokens'] <= 1024 or (remaining['searches'] <= 0 and remaining['distinct_pages'] <= 0)
+                if coverage_enabled:
+                    status = source_access_status(mapping, retrieved_ids, read)
+                    if not final:
+                        content = 'SOURCE_ACCESS_STATUS (access metadata, not proof): ' + json.dumps(
+                            {'sources': status, 'remaining': remaining}, ensure_ascii=False)
+                        if coverage_message is None:
+                            coverage_message = {'role': 'system', 'content': content}
+                            messages.append(coverage_message)
+                        else:
+                            coverage_message['content'] = content
+                        trace.append({'event': 'source_access_status', 'status': 'updated', 'sources': status,
+                                      'request_sequence': requests + 1})
+                        emit('source_access_status', 'completed', sources=status)
+                    elif coverage_message is not None:
+                        messages.remove(coverage_message)
+                        coverage_message = None
                 messages.append({'role':'system','content':'Remaining budgets: '+json.dumps(remaining)+
                                  ('. Return the final answer JSON now using evidence already read; no tools.' if final else '. Reserve the final request for the answer.')+' '+
                                  (final_answer_contract(contract,read,agent_config.get('final_answer_evidence_check',False)) if final else contract)})
@@ -406,6 +453,8 @@ def ask(question, mode, model, query_config, index, pages, agent_config, provide
         'translation_debit':cached_debit, 'budget_snapshot_complete':True}
     if conversation is not None:
         result['context_turns'] = len(history)
+    if coverage_enabled:
+        result['source_access_status'] = source_access_status(mapping, retrieved_ids, read)
     emit('terminal', 'completed' if result['completed'] else 'failed', termination_reason=reason,
          insufficient_evidence=answer['insufficient_evidence'])
     return result
