@@ -43,6 +43,8 @@ def documents(out):
                            ('VALIDATION.md', 'VALIDATION.md')):
         if (out / source).exists():
             shutil.copy2(out / source, package / target)
+    if (out / 'validation/final-retrieval.jpg').exists():
+        shutil.copy2(out / 'validation/final-retrieval.jpg', package / 'screenshots/final-retrieval.jpg')
     base = subprocess.check_output(['git', 'rev-parse', 'origin/main'], cwd=ROOT, text=True).strip()
     changes = subprocess.check_output(['git', 'diff', '--stat', 'origin/main', '--'], cwd=ROOT, text=True)
     (package / 'CHANGE-SUMMARY.md').write_text(
