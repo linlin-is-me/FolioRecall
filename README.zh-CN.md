@@ -6,7 +6,8 @@
 
 FolioRecall结合视觉检索与BM25，处理含文字、表格和图表的文档。受限Agent决定何时继续搜索和读页，界面展示实际执行步骤，支持英文与中文追问。本地Gradio应用常驻CPU查询模型与索引。
 
-> `0.1.0`为本地审核候选。新版源码和发布附件尚未公开，本页暂不提供附件下载链接。
+> `0.1.0`最终候选已整合多轮 Agent 与 ONNX FP32 推荐查询后端，供本地审核。新版源码和附件尚未发布。
+> [候选与审核入口](doc/v0.1.0发布说明.md) · [完整快速开始](doc/v0.1.0快速开始.md)
 
 ## 一个真实文档任务
 
@@ -50,41 +51,55 @@ flowchart TD
 - **工具与证据管理：** 搜索和读页反馈、资源限额、本轮引用权限、结构化答案，以及SQLite调用费用记录。
 - **多轮应用：** 最近三轮成功问答提供上下文；一次请求完成指代改写与中文转换，占用当前轮原有资源。历史答案不扩充引用权限。
 - **本地执行：** 工作线程和队列传递实时步骤，共用请求锁串行访问检索模型。浏览器断开不重发任务，后台仍保存终态。
-- **实测与交付：** CLI、常驻浏览器界面、隔离安装、便携示例，以及质量和费用的配对对照；保留失败及训练无收益结果。
+- **实测与交付：** CLI、常驻浏览器界面、隔离安装、便携示例、完整 ONNX 查询后端，以及质量和费用的配对对照；保留失败及训练无收益结果。
 
 Qwen与NanoVDR提供上游模型和权重；Sentence Transformers、FAISS、BM25与Gradio提供现成基础设施。本项目贡献是集成、工具执行、应用交付和受控比较，公开学生的加速收益归于上游模型。[来源说明](NOTICE) · [面试材料](doc/项目介绍与面试准备.md)
 
 ## 快速体验
 
-已验证Python 3.10、Ubuntu 22.04／WSL 2。取得本地审核wheel与增强版 `demo-bundle.zip`。42页示例含向量、预览、正文与BM25，无需GPU建库或教师权重；首次启动需要配置指定的公开查询学生，已有缓存可直接复用。
+已验证 Python 3.10、Ubuntu 22.04／WSL 2。取得本地候选 wheel、`demo-bundle.zip` 和 `query-onnx-fp32.zip`。42 页示例包含向量、预览、正文和 BM25；独立模型附件提供完整查询学生，无需 GPU、教师权重或重新建库。
+
+在附件目录执行，已有相同依赖环境可复用：
 
 ```bash
 python3.10 -m venv .venv
 CPU_PY="$PWD/.venv/bin/python"
 "$CPU_PY" -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-"$CPU_PY" -m pip install 'foliorecall-0.1.0-py3-none-any.whl[demo,agent]'
+"$CPU_PY" -m pip install 'foliorecall-0.1.0-py3-none-any.whl[onnx,demo,agent]'
 "$CPU_PY" -m zipfile -e demo-bundle.zip demo-local
+"$CPU_PY" -m zipfile -e query-onnx-fp32.zip demo-local
 cd demo-local/demo-bundle
 CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall query --index . \
-  --config configs/baseline.json --query-config configs/student-ml-cpu.json \
+  --config configs/baseline.json --query-config configs/student-ml-cpu-default.json \
   --retrieval-config hybrid.json \
-  'Which figure compares baseline and no-migration scenarios?' --json
+  'Which figure compares projections of the EU working-age population under baseline and no-migration scenarios?' --json
 ```
 
-CPU检索不调用生成API。RAG与Agent需要北京地域百炼密钥：
+检索不需要生成 API。免费浏览器：
+
+```bash
+CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall serve --index . \
+  --config configs/baseline.json --query-config configs/student-ml-cpu-default.json \
+  --retrieval-config hybrid.json --port 7867
+```
+
+停止上述服务，设置北京百炼环境变量后启动 RAG／Agent：
 
 ```bash
 export DASHSCOPE_API_KEY='replace-with-your-key'
 export DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+RUN_DIR="../outputs/chat-$(date +%Y%m%d-%H%M%S)"
 CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall serve --index . \
-  --config configs/baseline.json --query-config configs/student-ml-cpu.json \
+  --config configs/baseline.json --query-config configs/student-ml-cpu-default.json \
   --retrieval-config hybrid.json --agent-config configs/agent-demo.json \
-  --public-corpus public-corpus.json --output outputs/chat --port 7864
+  --public-corpus public-corpus.json --output "$RUN_DIR" --port 7867
 ```
 
-打开 `http://127.0.0.1:7864`，选择RAG或Agent并提交问题，查看实时步骤；同一会话可追问，新建会话清空上下文。展开结果面板可复制JSON，终态记录同时保存到本地。生成请求计费，示例使用相对账本路径与20元预算，新建会话不清空费用。
+打开 http://127.0.0.1:7867，查看来源、物理页码和预览；在文档问答中选择 RAG 或 Agent，观察实时步骤并连续追问。新建会话清空上下文，JSON 与终态记录保存在本地。
 
-原单轮 `ask` CLI和浏览器API继续可用。[完整使用说明](doc/首版使用与评测.md)提供源码安装与自有PDF建库入口。完整JRC语料、完整PDF、模型权重和凭据不随示例或候选包提供。
+问答需自行配置密钥及实际服务余额，示例 20 元为支出上限。切换会话不清空费用；重复启动使用新的记录目录。模型固定 `qwen3.7-plus-2026-05-26`，关闭思考。
+
+[完整快速开始](doc/v0.1.0快速开始.md)包含同版本旧 wheel 替换、int8 可选切换和 PyTorch 回退。旧配置省略后端字段时继续使用 PyTorch；产品 CLI、API 与答案结构兼容。完整 JRC 库、完整 PDF 和凭据不随候选提供，查询模型作为独立附件分发，不进入源码或 wheel。[使用说明](doc/首版使用与评测.md)另含源码安装与自有 PDF 建库入口。
 
 ## 质量、费用与误例
 
@@ -139,7 +154,7 @@ HR、Computer Science、Finance-EN、Industrial 和 Pharmaceuticals 五个固定
 
 ### 新增CPU后端对照
 
-同一CPU、200条冻结开发查询／1000页，batch1、4线程，三轮交替测量：
+同一 CPU、200 条冻结开发查询／1000 页，batch1、编码 4 线程，三轮交替测量。原入口计划 FAISS 单线程，但测量元数据记录实际为 4 线程；下表保留该轮实测值：
 
 | 后端 | 完整请求P50 | 预热RSS | 开发集nDCG@10 |
 |---|---:|---:|---:|
@@ -147,7 +162,7 @@ HR、Computer Science、Finance-EN、Industrial 和 Pharmaceuticals 五个固定
 | ONNX FP32 | 8.62 ms | 817.0 MiB | 0.972699 |
 | ONNX动态int8 | 4.79 ms | 581.1 MiB | 0.969008 |
 
-ONNX FP32在五领域1489题的检索指标与PyTorch一致，约2.24倍提速，但内存更高，选作新本地候选的CPU默认。int8约4.04倍提速、包体积减少72.2%，五域等权nDCG下降0.005031，保留为可选配置。只替换查询执行，包含池化、投影和归一化；时间不含加载、显示与生成，不代表问答同比加速。旧PyTorch体验入口继续兼容。[完整领域结果与导出命令](doc/首版使用与评测.md#onnx-cpu-backends) · [安装态真实界面](doc/assets/onnx-fp32-retrieval.png)
+ONNX FP32在五领域1489题的检索指标与PyTorch一致，约2.24倍提速，但内存更高，选作最终本地候选的 CPU 默认。int8约4.04倍提速、包体积减少72.2%，五域等权nDCG下降0.005031，保留为可选配置。只替换查询执行，包含池化、投影和归一化；时间不含加载、显示与生成，不代表问答同比加速。旧 PyTorch 体验入口继续兼容。该轮历史计时不与后来搜索阶段单线程的多深度实验作严格同条件比较。[完整领域结果与导出命令](doc/首版使用与评测.md#onnx-cpu-backends) · [安装态真实界面](doc/assets/onnx-fp32-retrieval.png)
 
 另完成 **LLaVE教师训练对照**：同256条训练查询、64批，开发集nDCG@10为0.978928，普通CachedMNRL为0.977083，增加0.001845，Recall保持0.995。200题中仅2题改善、1题退化，收益较小且集中，暂不承担新教师、匹配学生与索引迁移成本，保留实验结果。[详细对照与局限](doc/首版使用与评测.md#llave-training)
 

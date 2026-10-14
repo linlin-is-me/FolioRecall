@@ -6,7 +6,8 @@ English · [简体中文](README.zh-CN.md)
 
 FolioRecall combines visual retrieval and BM25 for documents containing text, tables and figures. Its bounded Agent decides when to search and read again, reports actual execution steps, and supports English and Chinese follow-ups. A local Gradio application keeps the CPU query model and index resident.
 
-> `0.1.0` is a local review candidate. Updated source and release assets have not been published; public asset downloads are not available yet.
+> The local `0.1.0` final candidate combines multi-turn Agent features with ONNX FP32 as the recommended CPU backend. Updated source and assets await review.
+> [Candidate review](doc/v0.1.0发布说明.md) · [Complete quick start](doc/v0.1.0快速开始.md)
 
 ## A real document task
 
@@ -50,41 +51,55 @@ Fixed RAG reads the top six pages. Agent mode permits three searches, six distin
 - **Tools and evidence:** search/read feedback, resource limits, current-turn citation permissions, structured answers and SQLite usage accounting.
 - **Multi-turn application:** the latest three successful turns supply context. One request resolves references and translates Chinese follow-ups within the current turn's budget. Previous answers do not grant citation permission.
 - **Local execution:** a worker and queue expose progress; a shared lock serializes retrieval/model access. A disconnected browser does not resend an active request; the worker still saves its terminal result.
-- **Measured delivery:** CLI, resident browser UI, isolated installation, portable examples and paired quality/cost comparisons. Failures and negative training results remain in the records.
+- **Measured delivery:** CLI, resident browser UI, isolated installation, portable examples, a complete ONNX query backend and paired quality/cost comparisons. Failures and negative training results remain in the records.
 
 Qwen and NanoVDR provide upstream models and weights. Sentence Transformers, FAISS, BM25 and Gradio provide reusable infrastructure. This project's contribution is integration, tool execution, application delivery and controlled comparisons; public-student speedups belong to the upstream model. [Sources](NOTICE) · [Interview material](doc/项目介绍与面试准备.md)
 
 ## Quick start
 
-Tested on Python 3.10 and Ubuntu 22.04 / WSL 2. Obtain the reviewed wheel and enhanced `demo-bundle.zip` locally. The 42-page example includes vectors, previews, text and BM25; no GPU indexing or teacher weights are needed. First launch needs the public query student specified by the configuration, or an existing model cache.
+Tested on Python 3.10 and Ubuntu 22.04 / WSL 2. Obtain the local wheel, `demo-bundle.zip` and `query-onnx-fp32.zip`. The 42-page demo includes vectors, previews, text and BM25. The separate model asset contains the complete query student; no GPU, teacher weights or index rebuilding is required.
+
+From the asset directory (an existing compatible dependency environment can be reused):
 
 ```bash
 python3.10 -m venv .venv
 CPU_PY="$PWD/.venv/bin/python"
 "$CPU_PY" -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-"$CPU_PY" -m pip install 'foliorecall-0.1.0-py3-none-any.whl[demo,agent]'
+"$CPU_PY" -m pip install 'foliorecall-0.1.0-py3-none-any.whl[onnx,demo,agent]'
 "$CPU_PY" -m zipfile -e demo-bundle.zip demo-local
+"$CPU_PY" -m zipfile -e query-onnx-fp32.zip demo-local
 cd demo-local/demo-bundle
 CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall query --index . \
-  --config configs/baseline.json --query-config configs/student-ml-cpu.json \
+  --config configs/baseline.json --query-config configs/student-ml-cpu-default.json \
   --retrieval-config hybrid.json \
-  'Which figure compares baseline and no-migration scenarios?' --json
+  'Which figure compares projections of the EU working-age population under baseline and no-migration scenarios?' --json
 ```
 
-CPU retrieval needs no generation API. For RAG and Agent, set a Beijing-region Bailian key and start the browser:
+Retrieval does not call a generation API. Start the free browser UI:
+
+```bash
+CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall serve --index . \
+  --config configs/baseline.json --query-config configs/student-ml-cpu-default.json \
+  --retrieval-config hybrid.json --port 7867
+```
+
+Stop that service, configure a Beijing-region Bailian key, then enable RAG and Agent:
 
 ```bash
 export DASHSCOPE_API_KEY='replace-with-your-key'
 export DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+RUN_DIR="../outputs/chat-$(date +%Y%m%d-%H%M%S)"
 CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall serve --index . \
-  --config configs/baseline.json --query-config configs/student-ml-cpu.json \
+  --config configs/baseline.json --query-config configs/student-ml-cpu-default.json \
   --retrieval-config hybrid.json --agent-config configs/agent-demo.json \
-  --public-corpus public-corpus.json --output outputs/chat --port 7864
+  --public-corpus public-corpus.json --output "$RUN_DIR" --port 7867
 ```
 
-Open `http://127.0.0.1:7864`, select RAG or Agent and submit a question. Ask a follow-up in the same conversation, or select **新建会话** to clear context. Expand the result panel to copy JSON; terminal records are also saved locally. API calls incur charges. The example sets a relative ledger and CNY 20 budget; resetting a conversation does not reset costs.
+Open http://127.0.0.1:7867 to inspect sources, physical pages and previews. Select RAG or Agent in the QA tab, inspect live execution steps, and ask follow-ups. A new conversation clears context; JSON and terminal records are saved locally.
 
-The single-turn `ask` CLI and browser API remain available. [Full usage](doc/首版使用与评测.md) covers source installation and own-PDF indexing. Full JRC documents, full PDFs, model weights and credentials are not included in this candidate.
+QA requires your own API key and service balance. CNY 20 is the example spending cap. Resetting a conversation does not reset costs. Use a new recording directory on restart. Generation uses `qwen3.7-plus-2026-05-26` with thinking disabled.
+
+The [complete quick start](doc/v0.1.0快速开始.md) covers replacing an older wheel of the same version, optional int8 and the PyTorch fallback. Old configurations without a backend field keep using PyTorch. Product CLI, API and answer shape remain compatible. Full JRC data, full PDFs and credentials are excluded; query models are separate assets, outside the source and wheel. [Full usage](doc/首版使用与评测.md) covers source installation and own-PDF indexing.
 
 ## Quality, cost and errors
 
@@ -138,6 +153,8 @@ Measured on an **RTX 4060 Laptop 8GB**, batch 1, PyTorch/FAISS threads 4/1, five
 [Full results and protocol (Chinese)](doc/首版使用与评测.md#本轮实测结果) include CPU comparisons, paired confidence intervals, per-domain timing, memory, indexing cost and error analysis.
 
 ### CPU backend comparison
+
+Historical FAISS metadata records four actual threads despite an intended single-thread setting. These figures are not a strict same-condition comparison with later multi-depth runs using search-only single threading.
 
 Same CPU, 200 fixed development queries / 1,000 pages, batch 1, four threads, three rotated rounds:
 
