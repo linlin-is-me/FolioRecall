@@ -45,6 +45,10 @@ def documents(out):
             shutil.copy2(out / source, package / target)
     if (out / 'validation/final-retrieval.jpg').exists():
         shutil.copy2(out / 'validation/final-retrieval.jpg', package / 'screenshots/final-retrieval.jpg')
+    for source, name in (('v010-retrieval-ui.jpg', 'ui-desktop.jpg'),
+                         ('v010-chat-layout.jpg', 'ui-chat.jpg')):
+        if (ROOT / 'doc/assets' / source).exists():
+            shutil.copy2(ROOT / 'doc/assets' / source, package / 'screenshots' / name)
     base = subprocess.check_output(['git', 'rev-parse', 'origin/main'], cwd=ROOT, text=True).strip()
     changes = subprocess.check_output(['git', 'diff', '--stat', 'origin/main', '--'], cwd=ROOT, text=True)
     (package / 'CHANGE-SUMMARY.md').write_text(

@@ -13,7 +13,9 @@ FolioRecall combines visual retrieval and BM25 for documents containing text, ta
 
 Ask how two European reports describe working-age population and employment, then ask in Chinese for evidence pages and time ranges. Searches, page reads and model requests appear as they happen, followed by claims, original-page citations and saved JSON.
 
-![Actual Agent follow-up and execution steps](doc/assets/v010-agent-followup.png)
+![Actual Agent follow-up and execution steps before the layout refresh](doc/assets/v010-agent-followup.png)
+
+The current UI separates inputs and conversation from answers and evidence, stacks them on narrow screens, and expands source pages on demand. The screenshot preserves an actual API response from the earlier layout. [Current UI and validation](doc/首版使用与评测.md#v010-final-candidate)
 
 <details><summary>Actual request progress and insufficient-evidence result</summary>
 

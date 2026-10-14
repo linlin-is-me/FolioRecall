@@ -13,7 +13,9 @@ FolioRecall结合视觉检索与BM25，处理含文字、表格和图表的文�
 
 询问两份欧洲报告如何描述劳动年龄人口与就业变化，再用中文追问证据页和分析时间范围。界面实时显示搜索、读页和模型请求，随后呈现事实声明、原页引用与保存的JSON。
 
-![真实Agent追问与执行步骤](doc/assets/v010-agent-followup.png)
+![真实Agent追问与执行步骤（排版调整前）](doc/assets/v010-agent-followup.png)
+
+当前界面将输入与会话、答案与证据分区，支持窄屏单列；原页按需展开。上图保留真实 API 回答，来自排版调整前的版本。[当前界面与验证](doc/首版使用与评测.md#v010-final-candidate)
 
 <details><summary>实际请求进度与不足回答</summary>
 

@@ -9,6 +9,19 @@ from foliorecall.demo import display_request, qa_display
 
 
 class DemoTests(unittest.TestCase):
+    def test_failed_empty_answer_and_missing_preview_remain_visible(self):
+        result = {'completed': False, 'termination_reason': 'api_transport_error',
+                  'answer': {'claims': [], 'insufficient_evidence': True, 'unresolved': []},
+                  'evidence': [{'page_id': 'p1', 'page_number': 2}],
+                  'timing': {'task_seconds': .1}}
+        with patch('foliorecall.agent.read_evidence', side_effect=OSError('missing')):
+            rendered = qa_display(result, [{'page_id': 'p1', 'doc_id': 'd'}])
+        self.assertIn('任务未完成', rendered)
+        self.assertIn('api_transport_error', rendered)
+        self.assertIn('id="qa-page-p1"', rendered)
+        self.assertIn('证据预览暂不可读', rendered)
+        self.assertNotIn('回答已生成', rendered)
+
     def test_qa_citation_fragment_resolves_unicode_and_punctuation(self):
         from html.parser import HTMLParser
         from urllib.parse import unquote

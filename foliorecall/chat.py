@@ -20,8 +20,8 @@ def recent_context(session):
 
 def answer_text(result):
     answer = result['answer']
-    text = '\n\n'.join(c['text'] + ' [' + ', '.join(c['evidence_page_ids']) + ']'
-                       for c in answer['claims'])
+    # The adjacent answer view renders full citation links; keep the transcript readable.
+    text = '\n\n'.join(c['text'] for c in answer['claims'])
     if answer['unresolved']:
         text += '\n\n' + '\n'.join(answer['unresolved'])
     if not result['completed']:
@@ -63,10 +63,15 @@ def progress_html(events):
             detail = event['termination_reason']
         if event.get('reason'):
             detail += ' · ' + event['reason']
-        rows.append('<li><strong>' + html.escape(name) + '</strong> · ' +
+        rows.append('<li><strong>' + html.escape(name) + '</strong><span class="fr-step-status ' +
+                    html.escape(event['status'], quote=True) + '">' +
                     html.escape(statuses.get(event['status'], event['status'])) +
-                    '<br><small>' + html.escape(detail) + '</small></li>')
-    return '<div id="agent-progress"><h3>执行步骤</h3><ol>' + ''.join(rows) + '</ol></div>'
+                    '</span><small>' + html.escape(detail) + '</small></li>')
+    latest = events[-1] if events else None
+    current = (labels.get(latest['event'], latest['event']) + ' · ' +
+               statuses.get(latest['status'], latest['status'])) if latest else '等待执行'
+    return ('<div id="agent-progress"><div class="fr-progress-head"><h3>执行步骤</h3><span>' +
+            html.escape(current) + '</span></div><ol>' + ''.join(rows) + '</ol></div>')
 
 
 def stream_chat(question, mode, session, execute, pages, request_lock, output=None):
