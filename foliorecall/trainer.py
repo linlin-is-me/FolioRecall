@@ -1,4 +1,4 @@
-"""Ordinary LoRA training using Sentence Transformers' scheduling and GradCache.
+"""LoRA training using Sentence Transformers' scheduling and GradCache.
 
 Only collating local images, stable batching and adapter-only resume are adapted.
 """
@@ -25,6 +25,18 @@ from .encoding import load_encoder, processing, encode_pages, encode_queries
 from .evaluation import evaluate, validate_candidate_corpus
 from .io import read_rows, read_json, write_rows, write_json, provenance
 from .search import save_index, search, load_index
+
+
+def loss_settings(settings):
+    """Validate optional ST hardness weighting before loading the teacher."""
+    mode = settings.get("hardness_mode")
+    strength = settings.get("hardness_strength", 0.0)
+    if mode is not None and (not isinstance(mode, str) or mode not in {
+            "in_batch_negatives", "hard_negatives", "all_negatives"}):
+        raise ValueError("hardness_mode 必须为 null 或 ST 支持的难度加权模式")
+    if isinstance(strength, bool) or not isinstance(strength, (int, float)) or not math.isfinite(strength) or strength < 0:
+        raise ValueError("hardness_strength 必须为有限非负数")
+    return {"hardness_mode": mode, "hardness_strength": float(strength)}
 
 
 def validate_training_data(split, pages, dev_pages):
@@ -241,6 +253,7 @@ class RunChecks(TrainerCallback):
 
 def train(config, data, output, resume=None, profile=False, stop_after=None, max_seconds=3600, checkpoint_only=False):
     invocation_started = time.monotonic()
+    weighting = loss_settings(config["train"])
     if config["device"] != "cuda" or not torch.cuda.is_available():
         raise ValueError("普通 LoRA 训练需要可用 CUDA")
     if config.get("adapter"):
@@ -322,7 +335,8 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
         report_to="none", disable_tqdm=True, dataloader_num_workers=0, dataloader_pin_memory=False,
         batch_sampler=partial(fixed_batch_sampler, fixed_seed=config["seed"]))
     checks = RunChecks(model, output, config, stop_after, max_seconds, initial, data / "dev", profile, history, checkpoint_only=checkpoint_only)
-    loss = CachedMultipleNegativesRankingLoss(model, mini_batch_size=settings["mini_batch_size"], scale=settings["scale"])
+    loss = CachedMultipleNegativesRankingLoss(model, mini_batch_size=settings["mini_batch_size"], scale=settings["scale"],
+                                            **weighting)
     trainer = AdapterTrainer(model=model, args=args, train_dataset=dataset, loss=loss, data_collator=collator, callbacks=[checks])
     trained = time.monotonic()
     trainer.train(resume_from_checkpoint=resume)
@@ -330,7 +344,10 @@ def train(config, data, output, resume=None, profile=False, stop_after=None, max
     if not updated and (trainer.state.global_step >= max_steps or any(
             step.get("learning_rate_used", 0) > 0 for step in checks.history if step["step"] > start_step)):
         raise ValueError("LoRA 参数没有更新")
-    report = {"scope": "resource/backward/resume check only" if profile else "ordinary LoRA internal-development baseline",
+    weighted = weighting["hardness_mode"] is not None and weighting["hardness_strength"] > 0
+    report = {"scope": "resource/backward/resume check only" if profile else (
+            "hardness-weighted LoRA internal-development experiment" if weighted else "ordinary LoRA internal-development baseline"),
+        "loss": {"name": "CachedMultipleNegativesRankingLoss", "scale": settings["scale"], **weighting},
         "checkpoint_only": checkpoint_only,
         "completed_steps": trainer.state.global_step, "target_steps": max_steps,
         "complete": trainer.state.global_step >= max_steps, "model_loading_seconds": loading_seconds,
