@@ -151,6 +151,8 @@ ONNX FP32 matches PyTorch retrieval metrics on all five domains / 1,489 queries,
 
 A separate **LLaVE teacher-training comparison** reused the same 256 training queries and 64 batches: dev nDCG@10 was 0.978928 versus 0.977083 for ordinary CachedMNRL (+0.001845), with Recall unchanged at 0.995. Only two of 200 queries improved and one regressed. The small, concentrated gain did not justify teacher/student and index migration; this experiment remains unintegrated. [Results and limitations (Chinese)](doc/首版使用与评测.md#llave-training)
 
+The six-arm depth study includes physical four-layer pruning, independent training, and joint four/six-layer exits. The joint four-layer package removes 20.7% of parameters but scores 0.495222 nDCG@10 versus 0.972699 for the public six-layer student, so the existing six-layer ONNX deployment stays in place. [Controlled results and limitations](doc/首版使用与评测.md#multidepth-query).
+
 ## Scope and limitations
 
 - English corpus; Chinese questions and follow-ups retrieve English pages. Native Chinese-document retrieval is unverified.

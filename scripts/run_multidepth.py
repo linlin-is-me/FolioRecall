@@ -47,14 +47,18 @@ def prepare(root):
 
 
 def train(root):
+    from datetime import datetime
     started=time.monotonic()
-    execution={'started_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'window_seconds':14400,'processes':[]}
+    execution=read_json(root/'execution.json') if (root/'execution.json').exists() else {
+        'started_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'window_seconds':14400,'processes':[]}
+    deadline=datetime.fromisoformat(execution['started_utc'].replace('Z','+00:00')).timestamp()+execution['window_seconds']
+    previous_seconds=execution.get('elapsed_seconds',0)
     write_json(root/'execution.json',execution)
     for arm,depths in [('independent4',[4]),('joint',[4,6])]:
         output=root/'training'/arm
         if (output/'result.json').exists() and read_json(output/'result.json')['complete']:
             continue
-        remaining=14400-(time.monotonic()-started)-120
+        remaining=deadline-time.time()-120
         if remaining < 120: raise RuntimeError('GPU窗口剩余不足，保留已有结果')
         command=[sys.executable,'-u','-m','foliorecall','distill','--query-config',str(root/f'configs/train-{arm}.json'),
             '--targets','outputs/stage3/targets-3000','--output',str(output),'--skip-evaluation',
@@ -66,9 +70,11 @@ def train(root):
         with (root/f'train-{arm}.log').open('a') as log:
             child=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,timeout=remaining+90)
         execution['processes'].append({'arm':arm,'command':command,'seconds':time.monotonic()-before,'returncode':child.returncode})
-        execution['elapsed_seconds']=time.monotonic()-started
+        execution['elapsed_seconds']=previous_seconds+time.monotonic()-started
         write_json(root/'execution.json',execution)
         if child.returncode: raise RuntimeError(f'{arm}训练失败，见保留日志')
+        if not read_json(output/'result.json')['complete']:
+            raise RuntimeError(f'{arm}已保存部分检查点，恢复当前臂后再继续')
     for arm,path in [('independent4',root/'training/independent4/final'),
                      ('joint4',root/'training/joint/exports/depth-4'),('joint6',root/'training/joint/exports/depth-6')]:
         cfg=read_json(path/'query-config.json')

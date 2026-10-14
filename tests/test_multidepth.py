@@ -77,6 +77,23 @@ class MultiDepthTests(unittest.TestCase):
             with self.assertRaises(ValueError):validate_depths(depths,cfg)
         for depth in [True,5,'4']:
             with self.assertRaises(ValueError):validate_backend({'num_layers':depth})
+        # Re-entering a completed experiment must not erase GPU records or restart its window.
+        from unittest.mock import patch
+        from scripts.run_multidepth import train
+        from foliorecall.io import write_json,read_json
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            execution={'started_utc':'2020-01-01T00:00:00Z','window_seconds':14400,
+                       'processes':[{'arm':'independent4','returncode':0},{'arm':'joint','returncode':0}],
+                       'elapsed_seconds':130.0}
+            write_json(root/'execution.json',execution)
+            for arm in ('independent4','joint'):write_json(root/f'training/{arm}/result.json',{'complete':True})
+            for path in ['training/independent4/final','training/joint/exports/depth-4','training/joint/exports/depth-6']:
+                write_json(root/path/'query-config.json',{'num_layers':4 if path.endswith('4') or 'independent4' in path else 6})
+            with patch('scripts.run_multidepth.subprocess.run') as child:
+                self.assertEqual(train(root),execution)
+                child.assert_not_called()
+            self.assertEqual(read_json(root/'execution.json'),execution)
 
     def test_faiss_thread_limit_restores_encoding_threads(self):
         from unittest.mock import patch
