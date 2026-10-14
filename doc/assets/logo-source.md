@@ -1,6 +1,6 @@
 # FolioRecall 标识
 
-完整字标由项目名称 FolioRecall 变形构成：F 的上横融入翻页折角，R 的位置直接使用放大镜，末尾两个 l 合并为打开的书本。首字母 F 单独用于浏览器图标。采用深绿与灰绿，图形保留透明底；页寻使用界面文字显示。完整项目名同时保留在README标题、图片替代文字和浏览器标题中。
+完整字标由项目名称 FolioRecall 变形构成：F 的上横融入翻页折角，R 由竖笔、放大镜及其右侧书本共同构成，末尾两个 l 保留独立竖笔及细小页边线。首字母 F 单独用于浏览器图标。采用深绿与灰绿，图形保留透明底；页寻使用界面文字显示。完整项目名同时保留在README标题、图片替代文字和浏览器标题中。
 
 资源由 OpenAI 内置 image_gen 生成，未使用上游项目标识。原图为 `foliorecall-wordmark.png` 和 `foliorecall-lettermark.png`；前端与README使用 `foliorecall/assets/wordmark.png`，浏览器图标使用同目录 `logo.png`。附带发布包的 `branding` 目录提供原图和显示尺寸。
 
@@ -28,7 +28,7 @@ Make ONE very specific edit to this FolioRecall logo. The user wants an immediat
 
 ## 末尾 ll 合并为书本
 
-输入为已经替换放大镜的字标。当前 `foliorecall-wordmark.png` 是此次最终修订图。
+输入为已经替换放大镜的字标。此轮书本替换方案已由下方修订取代。
 
 ```text
 Edit ONLY the final two lowercase l letters at the far right of this existing logo. Preserve the folded F, all letters before the final ll, and especially the literal magnifying glass in the R position EXACTLY as supplied. Transform the terminal ll into ONE unmistakable small OPEN BOOK integrated into the wordmark: the pair of tall vertical strokes become the upright outside edges of two open pages, separated by a clear central spine/gutter; the upper and lower page contours gently meet at that central spine. Make the two facing pages visually read as a book, with open transparent interior and one restrained inset page-edge line on each side. Keep a tall compact silhouette recalling the two lowercase l stems, but allow this final unit modest extra width so the book is unmistakable at small UI size. Use dark forest teal outlines with one small muted sage page-edge accent; match the rounded geometric family and visual stroke weight of the wordmark. This book REPLACES the final ll, do not append an additional book after ll, and do not retain two ordinary l letters beside it. Keep visual text sequence F-o-l-i-o-[magnifying glass]-e-c-a-[open book representing ll]. Same baseline and cap height. No change to magnifying glass, no extra text, no unrelated decoration, no shadow or background. Flat clean logo on genuinely transparent background, one horizontal composition.
@@ -40,4 +40,14 @@ Edit ONLY the final two lowercase l letters at the far right of this existing lo
 
 ```text
 Use case: logo-brand. This image is the approved design source for an asset extraction. Extract ONLY the custom initial capital F from the FolioRecall wordmark: preserve its exact folded sage corner, dark teal body, rounded descending stem and curved horizontal bars. Remove every other letter. Do not redesign the F or add any symbols. Place that single F centered on a square genuinely transparent canvas with comfortable 12 percent padding, suitable as the matching browser favicon/app avatar. Preserve original palette and crisp contours. No other text, no shadow, no enclosing square, no mockup.
+```
+
+## 完整 R 与清晰 ll 的最终修订
+
+用户要求将书本放到放大镜右侧共同组成R，末尾ll恢复可辨识字母。以下为本轮编辑及补齐R竖笔的提示，使用内置image_gen；当前原图与显示尺寸均为这一版。
+
+```text
+Use case: logo-brand, precise edit. Edit the supplied FolioRecall wordmark according to this exact request: R字母的放大镜部分右侧加上一本书组成完整的字母R，最后两个ll要能看出是字母l. Keep the folded F and all untouched lowercase letters, palette and minimalist geometric style. TWO changes only: (1) At the R position, combine the existing clearly recognizable magnifying glass WITH A SMALL BOOK ON ITS RIGHT into one cohesive, clearly readable CAPITAL R. The magnifying-glass circular lens and diagonal handle must remain recognizable, but restore the necessary upright structure so the whole custom glyph reads R rather than Q or an isolated search icon. Integrate a compact upright book/page detail into the RIGHT SIDE of this composite R, not somewhere else in the wordmark; its straight spine and subtle page edges should participate in the R structure. Do not add a large standalone book between R and e. Preserve clean spacing and a strong R silhouette at small size. (2) Replace the terminal open-book icon with TWO SEPARATE CLEAR LOWERCASE l LETTERS, same height as the earlier l in Folio, upright parallel stems with a distinct gap. They may have a tiny page-edge detail, but must read 'll', not an open book, m, n, or an icon. Correct full readable spelling is FolioRecall. Dark forest teal with muted sage accents, genuine transparent background, flat crisp finish, no shadows, no new words, no slogan. Only one horizontal wordmark.
+
+Precise logo correction. Keep the supplied artwork unchanged EXCEPT complete the capital R at the center. It currently has a magnifying-glass ring, book on its RIGHT, and diagonal leg, but it is MISSING THE LEFT VERTICAL STEM. ADD a straight dark-teal vertical stem at the LEFT EDGE of the magnifier, extending from cap height down to the shared baseline, connected to the ring; this must make the compound symbol unmistakably read capital R. Keep the circular lens open and recognizable as a magnifying glass. Keep the compact book on the RIGHT of the lens, and keep the sage diagonal handle as the R leg. Do not move the book to the left. Preserve the two distinct tall lowercase l letters at the end with their subtle sage page-edge lines, exactly as in the reference. Preserve folded F, all other letters, colors, proportions and transparent background. The exact readable name is FolioRecall. No extra symbols or text. One horizontal wordmark.
 ```
