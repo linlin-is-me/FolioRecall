@@ -8,7 +8,7 @@
 
 FolioRecall结合视觉检索与BM25，处理含文字、表格和图表的文档。受限Agent决定何时继续搜索和读页，界面展示实际执行步骤，支持英文与中文追问。本地Gradio应用常驻CPU查询模型与索引。
 
-> `0.1.0`最终候选已整合多轮 Agent 与 ONNX FP32 推荐查询后端，供本地审核。新版源码和附件尚未发布。
+> `0.1.0`最终本地候选已完成：多轮 Agent、ONNX FP32 推荐后端、界面与首次使用提示、项目Logo均已整合，等待审核。新版源码尚未推送，附件尚未发布。
 > [候选与审核入口](doc/v0.1.0发布说明.md) · [完整快速开始](doc/v0.1.0快速开始.md)
 
 ## 一个真实文档任务
@@ -58,6 +58,8 @@ flowchart TD
 - **实测与交付：** CLI、常驻浏览器界面、隔离安装、便携示例、完整 ONNX 查询后端，以及质量和费用的配对对照；保留失败及训练无收益结果。
 
 Qwen与NanoVDR提供上游模型和权重；Sentence Transformers、FAISS、BM25与Gradio提供现成基础设施。本项目贡献是集成、工具执行、应用交付和受控比较，公开学生的加速收益归于上游模型。[来源说明](NOTICE) · [面试材料](doc/项目介绍与面试准备.md)
+
+技术栈为Python、PyTorch／Sentence Transformers、ONNX Runtime、FAISS／BM25、HTTPX、SQLite和Gradio。Agent采用Function Calling与自实现Python工具循环；当前未使用LangChain或LangGraph。[技术栈与代码入口](doc/首版使用与评测.md#current-stack)
 
 ## 快速体验
 

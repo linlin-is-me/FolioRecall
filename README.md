@@ -8,7 +8,7 @@ English · [简体中文](README.zh-CN.md)
 
 FolioRecall combines visual retrieval and BM25 for documents containing text, tables and figures. Its bounded Agent decides when to search and read again, reports actual execution steps, and supports English and Chinese follow-ups. A local Gradio application keeps the CPU query model and index resident.
 
-> The local `0.1.0` final candidate combines multi-turn Agent features with ONNX FP32 as the recommended CPU backend. Updated source and assets await review.
+> The local `0.1.0` final candidate is complete: multi-turn Agent features, the recommended ONNX FP32 backend, refreshed layout and onboarding, and the project logo. It awaits review; updated source has not been pushed and assets have not been published.
 > [Candidate review](doc/v0.1.0发布说明.md) · [Complete quick start](doc/v0.1.0快速开始.md)
 
 ## A real document task
@@ -58,6 +58,8 @@ Fixed RAG reads the top six pages. Agent mode permits three searches, six distin
 - **Measured delivery:** CLI, resident browser UI, isolated installation, portable examples, a complete ONNX query backend and paired quality/cost comparisons. Failures and negative training results remain in the records.
 
 Qwen and NanoVDR provide upstream models and weights. Sentence Transformers, FAISS, BM25 and Gradio provide reusable infrastructure. This project's contribution is integration, tool execution, application delivery and controlled comparisons; public-student speedups belong to the upstream model. [Sources](NOTICE) · [Interview material](doc/项目介绍与面试准备.md)
+
+The stack uses Python, PyTorch / Sentence Transformers, ONNX Runtime, FAISS / BM25, HTTPX, SQLite and Gradio. The Agent uses function calling and a project-owned Python tool loop; it currently does not use LangChain or LangGraph. [Stack and code entry points](doc/首版使用与评测.md#current-stack)
 
 ## Quick start
 
