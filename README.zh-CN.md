@@ -147,7 +147,7 @@ HR、Computer Science、Finance-EN、Industrial 和 Pharmaceuticals 五个固定
 | ONNX FP32 | 8.62 ms | 817.0 MiB | 0.972699 |
 | ONNX动态int8 | 4.79 ms | 581.1 MiB | 0.969008 |
 
-ONNX FP32在五领域1489题的检索指标与PyTorch一致，约2.24倍提速，但内存更高，选作新本地候选的CPU默认。int8约4.04倍提速、包体积减少72.2%，五域等权nDCG下降0.005031，保留为可选配置。只替换查询执行，包含池化、投影和归一化；时间不含加载、显示与生成，不代表问答同比加速。旧PyTorch体验入口继续兼容。[完整领域结果与导出命令](doc/首版使用与评测.md#onnx-cpu-backends)
+ONNX FP32在五领域1489题的检索指标与PyTorch一致，约2.24倍提速，但内存更高，选作新本地候选的CPU默认。int8约4.04倍提速、包体积减少72.2%，五域等权nDCG下降0.005031，保留为可选配置。只替换查询执行，包含池化、投影和归一化；时间不含加载、显示与生成，不代表问答同比加速。旧PyTorch体验入口继续兼容。[完整领域结果与导出命令](doc/首版使用与评测.md#onnx-cpu-backends) · [安装态真实界面](doc/assets/onnx-fp32-retrieval.png)
 
 ## 能力边界
 
