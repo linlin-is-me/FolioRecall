@@ -137,13 +137,25 @@ Measured on an **RTX 4060 Laptop 8GB**, batch 1, PyTorch/FAISS threads 4/1, five
 
 [Full results and protocol (Chinese)](doc/首版使用与评测.md#本轮实测结果) include CPU comparisons, paired confidence intervals, per-domain timing, memory, indexing cost and error analysis.
 
+### CPU backend comparison
+
+Same CPU, 200 fixed development queries / 1,000 pages, batch 1, four threads, three rotated rounds:
+
+| Backend | Full request P50 | Warm RSS | Dev nDCG@10 |
+|---|---:|---:|---:|
+| PyTorch FP32 | 19.33 ms | 636.0 MiB | 0.972699 |
+| ONNX FP32 | 8.62 ms | 817.0 MiB | 0.972699 |
+| ONNX动态int8 | 4.79 ms | 581.1 MiB | 0.969008 |
+
+ONNX FP32 matches PyTorch retrieval metrics on all five domains / 1,489 queries, with a 2.24x dev request speedup but higher RSS; it is the new local candidate CPU default. Int8 gives 4.04x speedup and a 72.2% smaller package, with a 0.005031 drop in equal-domain nDCG; it remains optional. Timings include pooling/projection/normalization and retrieval JSON, excluding loading, display and generation. They are not end-to-end Q&A speedups. Existing PyTorch quickstart remains compatible. [Domain results and export commands (Chinese)](doc/首版使用与评测.md#onnx-cpu-backends)
+
 ## Scope and limitations
 
 - English corpus; Chinese questions and follow-ups retrieve English pages. Native Chinese-document retrieval is unverified.
 - Local single-user application with remote generation. Browser-state conversations clear on refresh; there is no persistent conversation database or multi-user deployment.
 - Answers may misread figures, omit facts or cite insufficient evidence. History resolves references and is not verified factual evidence.
 - Fixed tasks, one training seed and assistant scoring limit generalization claims; upstream training overlap is not fully established.
-- Retrieval incurs no generation charges; Q&A requires a key and service balance. Reranking, ONNX/int8 and unrestricted external tools are not implemented.
+- Retrieval incurs no generation charges; Q&A requires a key and service balance. Reranking and unrestricted external tools are not implemented.
 
 ## Documentation and license
 

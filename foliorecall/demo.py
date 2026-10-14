@@ -115,6 +115,8 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
         if retrieval:
             gr.Markdown('混合检索：视觉与 BM25 各取 Top-50，以 RRF k=60 融合；展示融合分数，不是余弦相似度。两路名次与原分数见 JSON。')
         gr.Markdown(f"当前模型：`{query_config['model_id']}` · `{query_config['device']}` / `{query_config['dtype']}`\n\n页面库：`{Path(folder).resolve().name}` · {len(pages)} 页")
+        if query_config.get('backend') == 'onnx':
+            gr.Markdown(f"查询后端：ONNX Runtime CPU · 图文件 `{query_config['onnx_file']}`；池化、投影与归一化使用 FP32。")
         with gr.Tab('页面检索'):
             text = gr.Textbox(label='英文问题', placeholder='Enter a question about these documents')
             top_k = gr.Slider(1, min(10, len(pages)), value=min(5, len(pages)), step=1, label='Top-k')

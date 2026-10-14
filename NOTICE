@@ -7,5 +7,6 @@ Model weights, datasets, document images and upstream code retain their own lice
 This project uses Sentence Transformers (UKPLab), Transformers and Hugging Face Hub
 (Hugging Face), Qwen3-VL-Embedding (Qwen), NanoVDR (Zhuchenyang Liu, Yao Zhang,
 Yu Xiao), FAISS (Meta), PyTorch, Gradio, pypdfium2, rank-bm25 and pytrec_eval.
+ONNX and ONNX Runtime (Microsoft) provide the optional CPU deployment backend.
 Their implementations and pretrained models are not original FolioRecall work.
 See README and the example bundle's SOURCES.md for sources and material licenses.
