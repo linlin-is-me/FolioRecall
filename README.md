@@ -102,6 +102,8 @@ The v0.1.0 multi-turn interface has separate functional verification; A5 is not 
 
 Five actual browser turns passed progress, follow-up, reset, citation and JSON checks, using 25 API calls with CNY 0.455042 known estimated cost. The cross-document example read only the population report and omitted employment-report evidence; the follow-up retained that omission. The screenshots preserve this limitation. The Saturn case returned no factual claims and reported insufficient evidence. These cases verify use, not aggregate answer accuracy.
 
+A separate evidence-coverage development comparison evaluated 12 turns with baseline and candidate (24 assistant-reviewed attempts). The candidate reduced requests and cost, but required-fact coverage fell from 0.6402 to 0.6061 and core cross-document omissions remained. It was not adopted; defaults and the original candidate package are unchanged. [Results and limitations (Chinese)](doc/首版使用与评测.md#agent证据覆盖开发对照2026-10-14)
+
 ## Retrieval architecture and experiments
 
 ![Offline page teacher and online query student](doc/assets/architecture-light.svg)
