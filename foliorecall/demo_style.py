@@ -43,9 +43,9 @@ CSS = '''
   gap: 24px; padding: 8px 0 24px; color: var(--fr-ink); }
 .fr-brand { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .fr-brand > div { min-width: 0; }
-.fr-logo { width: 46px; height: 46px; flex-shrink: 0; color: var(--fr-accent);
-  background: var(--fr-tint); border: 1px solid var(--fr-line); border-radius: 14px; padding: 10px; }
-.fr-brand h1 { margin: 0 !important; font-size: 27px !important; letter-spacing: -.7px; font-weight: 650; }
+.fr-wordmark { display: block; width: 232px; height: auto; object-fit: contain; }
+.dark .fr-wordmark { background: #f5f7f6; border-radius: 6px; }
+.fr-brand h1 { display: flex; align-items: center; margin: 0 !important; font-size: 27px !important; letter-spacing: -.7px; font-weight: 650; }
 .fr-brand h1 span { font-size: 18px; font-weight: 450; margin-left: 10px; color: var(--fr-muted); }
 .fr-brand p { margin: 5px 0 0; font-size: 14px; color: var(--fr-muted); }
 .fr-badges { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -124,6 +124,7 @@ CSS = '''
 @media (max-width: 800px) {
   .fr-header { align-items: flex-start; flex-direction: column; gap: 14px; padding-bottom: 18px; }
   .fr-brand h1 { font-size: 23px !important; }
+  .fr-wordmark { width: min(232px, 58vw); }
   .fr-workspace { flex-direction: column !important; gap: 18px !important; }
   .fr-controls, .fr-results { width: 100% !important; min-width: 0 !important; }
   .fr-controls { padding: 18px !important; }

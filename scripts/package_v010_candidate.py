@@ -23,6 +23,12 @@ def write(path, value):
 
 def documents(out):
     package = out / 'package'
+    (package / 'branding').mkdir(exist_ok=True)
+    shutil.copy2(ROOT / 'doc/assets/foliorecall-wordmark.png', package / 'branding/foliorecall-wordmark.png')
+    shutil.copy2(ROOT / 'doc/assets/foliorecall-lettermark.png', package / 'branding/foliorecall-lettermark.png')
+    shutil.copy2(ROOT / 'foliorecall/assets/wordmark.png', package / 'branding/wordmark.png')
+    shutil.copy2(ROOT / 'foliorecall/assets/logo.png', package / 'branding/logo-256.png')
+    shutil.copy2(ROOT / 'doc/assets/logo-source.md', package / 'branding/README.md')
     for name in ('LICENSE', 'NOTICE', '.env.example'):
         shutil.copy2(ROOT / name, package / name)
     shutil.copy2(ROOT / 'doc/v0.1.0快速开始.md', package / 'QUICKSTART.md')

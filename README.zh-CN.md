@@ -1,3 +1,5 @@
+<p><img src="foliorecall/assets/wordmark.png" width="420" alt="FolioRecall 页寻标识"></p>
+
 # FolioRecall · 页寻
 
 **检索文档证据、读取原页、执行补查并提供引用的文档Agent。**

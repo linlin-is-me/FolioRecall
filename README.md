@@ -1,3 +1,5 @@
+<p><img src="foliorecall/assets/wordmark.png" width="420" alt="FolioRecall logo"></p>
+
 # FolioRecall · 页寻
 
 **A document Agent that searches evidence, reads original pages and answers with citations.**

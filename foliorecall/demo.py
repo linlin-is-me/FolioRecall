@@ -1,4 +1,5 @@
 """One resident model and index; display the same retrieval result as the CLI."""
+import base64
 import json
 from pathlib import Path
 import tempfile
@@ -8,6 +9,9 @@ import threading
 from .io import provenance, read_json, write_json
 from .query import load_retriever, load_search_session, process_memory, retrieve
 from .demo_style import CSS, EMPTY_ANSWER, BUSY_ANSWER, document_label
+
+LOGO_PATH = Path(__file__).with_name('assets') / 'logo.png'
+WORDMARK_PATH = LOGO_PATH.with_name('wordmark.png')
 
 
 def display_request(model, config, index, pages, text, top_k, downloads, log=None, retrieval=None):
@@ -141,14 +145,13 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
     request_lock = threading.Lock()
     from html import escape
     backend = 'ONNX CPU' if query_config.get('backend') == 'onnx' else query_config['device'].upper()
+    logo = base64.b64encode(WORDMARK_PATH.read_bytes()).decode('ascii')
     theme = gr.themes.Base(primary_hue=gr.themes.colors.teal, neutral_hue=gr.themes.colors.slate,
                            font=['system-ui', 'Segoe UI', 'Microsoft YaHei', 'sans-serif'],
                            font_mono=['ui-monospace', 'Consolas', 'monospace'])
     with gr.Blocks(title='FolioRecall · 页寻', analytics_enabled=False) as app:
         gr.HTML(f'''<header class="fr-header"><div class="fr-brand">
-<svg class="fr-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-<path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h5"/><path d="M3 6v15"/></svg>
-<div><h1>FolioRecall<span>页寻</span></h1><p>找到文档证据，展开有据可查的对话。</p></div></div>
+<div><h1><img class="fr-wordmark" src="data:image/png;base64,{logo}" width="232" height="45" alt="FolioRecall"><span>页寻</span></h1><p>找到文档证据，展开有据可查的对话。</p></div></div>
 <div class="fr-badges"><span class="fr-badge">{len(pages)} 页文档库</span><span class="fr-badge">{escape(backend)}</span>
 <span class="fr-badge">{'视觉 + BM25' if retrieval else '视觉检索'}</span></div></header>''')
         documents = {}
@@ -273,6 +276,7 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
             if provider:
                 gr.Markdown(f'问答模型：北京百炼 `{agent_config["model"]}`。每轮最多读取 6 页公开资料；新建会话不清空费用账本。')
     try:
-        app.launch(server_name='127.0.0.1', server_port=port, share=False, inbrowser=False, theme=theme, css=CSS)
+        app.launch(server_name='127.0.0.1', server_port=port, share=False, inbrowser=False,
+                   theme=theme, css=CSS, favicon_path=str(LOGO_PATH))
     finally:
         temporary.cleanup()

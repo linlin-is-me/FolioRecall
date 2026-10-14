@@ -33,3 +33,6 @@ Repository = "https://github.com/linlin-is-me/FolioRecall"
 
 [tool.setuptools]
 packages = ["foliorecall"]
+
+[tool.setuptools.package-data]
+foliorecall = ["assets/*.png"]
