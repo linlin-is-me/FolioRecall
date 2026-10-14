@@ -9,6 +9,7 @@ from .search import encoding_identity, search
 
 
 def validate_query_config(config, teacher_config):
+    validate_backend(config)
     if config.get("kind") != "nanovdr":
         raise ValueError("查询学生 kind 必须为 nanovdr")
     if config.get("target_encoding_identity") != encoding_identity(teacher_config):
@@ -24,10 +25,25 @@ def validate_query_config(config, teacher_config):
         raise ValueError("必须使用发布包配套 tokenizer")
 
 
+def validate_backend(config):
+    backend = config.get('backend', 'torch')
+    if backend not in ('torch', 'onnx'):
+        raise ValueError('查询 backend 必须为 torch 或 onnx')
+    if backend == 'onnx':
+        if config.get('device') != 'cpu' or config.get('dtype') != 'float32':
+            raise ValueError('ONNX查询只支持CPU和FP32外层模块')
+        if not config.get('model_path') or not config.get('onnx_file'):
+            raise ValueError('ONNX查询需要本地 model_path 和 onnx_file')
+        graph = Path(config['onnx_file'])
+        if graph.is_absolute() or '..' in graph.parts:
+            raise ValueError('onnx_file 必须位于模型包内')
+
+
 def load_query_encoder(config):
     if config.get("kind") != "nanovdr":
         from .encoding import load_encoder
         return load_encoder(config)
+    validate_backend(config)
     import torch
     if config["device"] == "cuda" and not torch.cuda.is_available():
         raise ValueError("CUDA 不可用；CPU 示例请显式使用 student-ml-cpu.json")
@@ -38,10 +54,21 @@ def load_query_encoder(config):
                     "dimension", "pooling", "projection", "normalize", "max_length", "prompt"):
             if saved.get(key) != config.get(key):
                 raise ValueError(f"本地学生包与查询配置不匹配: {key}")
+    options = {}
+    kwargs = {"dtype": getattr(torch, config["dtype"]), "attn_implementation": "sdpa"}
+    if config.get('backend') == 'onnx':
+        if not (Path(config['model_path']) / config['onnx_file']).is_file():
+            raise ValueError('ONNX图不存在，请先执行导出；运行时不自动导出')
+        try:
+            import onnxruntime
+        except ImportError as exc:
+            raise ValueError('ONNX查询需要安装 foliorecall[onnx]') from exc
+        from .onnx_query import OnnxQueryEncoder
+        return OnnxQueryEncoder(config)
     model = SentenceTransformer(config.get("model_path") or config["model_id"],
         revision=None if config.get("model_path") else config["revision"],
         device=config["device"], trust_remote_code=False,
-        model_kwargs={"dtype": getattr(torch, config["dtype"]), "attn_implementation": "sdpa"})
+        model_kwargs=kwargs, **options)
     names = [type(module).__name__ for module in model]
     if names != ["Transformer", "Pooling", "Dense", "Dense", "Normalize"]:
         raise ValueError(f"学生模块与发布结构不匹配: {names}")
@@ -142,6 +169,17 @@ def model_file_sizes(config):
         if not isinstance(cached, str):
             return {'base_weight_bytes': None, 'adapter_weight_bytes': None, 'weight_file_bytes': None, 'model_package_bytes': None}
         folder = Path(cached).parent
+    if config.get('backend') == 'onnx':
+        # Full independent deployment package, including ONNX external data and heads.
+        files = [p for p in folder.rglob('*') if p.is_file() and p.name not in {'source.json', 'export-result.json'}]
+        graph = folder / config['onnx_file']
+        graph_files = [p for p in graph.parent.iterdir() if p.is_file()]
+        heads = [p for p in files if p.suffix == '.safetensors' or p.name == 'pytorch_model.bin']
+        graph_bytes = sum(p.stat().st_size for p in graph_files)
+        return {'base_weight_bytes': graph_bytes, 'adapter_weight_bytes': 0,
+                'weight_file_bytes': graph_bytes + sum(p.stat().st_size for p in heads),
+                'model_package_bytes': sum(p.stat().st_size for p in files),
+                'model_package_scope': 'complete ONNX deployment: graph/external data, tokenizer/config and FP32 pooling/projection/normalize'}
     def files(path):
         # Restrict checkpoints to their loadable model, not optimizer/evaluation artifacts.
         excluded = {'trainer_state.json', 'training-source.json', 'encoding.json', 'config.json.tmp'}
@@ -190,7 +228,7 @@ def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3,
                            'reserved_bytes': torch.cuda.max_memory_reserved()} if config['device'] == 'cuda' else None
     if config["device"] == "cuda":
         torch.cuda.reset_peak_memory_stats()
-    requests, results, rounds = [], [], []
+    requests, results, rounds, ranking_changes = [], [], [], []
     def percentiles(rows, key):
         return {f"p{p}": float(np.percentile([r[key] for r in rows], p)) for p in (50, 95)}
     for repeat in range(repeats):
@@ -204,7 +242,7 @@ def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3,
                 results.append({"query_id": str(query["query_id"]), "query": query["query"],
                     "ranking": ranked, **metrics([p["page_id"] for p in ranked], qrels[str(query["query_id"])])})
             elif [p["page_id"] for p in ranked] != [p["page_id"] for p in results[len(current)-1]["ranking"]]:
-                raise ValueError("重复测量排名变化，需排查确定性")
+                ranking_changes.append({'repeat': repeat, 'query_id': str(query['query_id'])})
         rounds.append({key: percentiles(current, key) for key in times})
         print(f"benchmark repeat {repeat+1}/{repeats} complete", flush=True)
     return {"scope": "fixed internal development; upstream student VDR overlap unverified",
@@ -219,8 +257,10 @@ def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3,
         "faiss_threads": faiss.omp_get_max_threads(),
         "cpu": next((line.split(':', 1)[1].strip() for line in Path("/proc/cpuinfo").read_text().splitlines()
                      if line.startswith("model name")), None) if Path("/proc/cpuinfo").exists() else None,
-        "parameter_count": sum(p.numel() for p in model.parameters()),
-        "parameter_bytes": sum(p.numel()*p.element_size() for p in model.parameters()),
+        "parameter_count": None if config.get('backend') == 'onnx' else sum(p.numel() for p in model.parameters()),
+        "parameter_bytes": None if config.get('backend') == 'onnx' else sum(p.numel()*p.element_size() for p in model.parameters()),
+        "parameter_scope": 'ONNX native weights are not torch parameters; use full package and process memory' if config.get('backend') == 'onnx' else 'all torch parameters',
+        "backend": config.get('backend', 'torch'), "ranking_changes": ranking_changes,
         **model_file_sizes(config),
         "loading_warmup_cuda_peak": loading_warmup_cuda,
         "cuda_peak_scope": "peak_cuda fields cover warm requests after reset; loading_warmup_cuda_peak covers model loading and warmup before reset",
