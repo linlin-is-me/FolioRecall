@@ -97,7 +97,7 @@ CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall serve --index . \
   --public-corpus public-corpus.json --output "$RUN_DIR" --port 7867
 ```
 
-Open http://127.0.0.1:7867 to inspect sources, physical pages and previews. Select RAG or Agent in the QA tab, inspect live execution steps, and ask follow-ups. A new conversation clears context; JSON and terminal records are saved locally.
+Open http://127.0.0.1:7867. With generation configured, the app opens on document QA; otherwise it opens on page search. The header lists the current collection. Click a starter example to fill the question and mode, then submit; examples never trigger generation automatically. Follow-up and new-conversation examples are labelled separately. Sources use short display names and physical page numbers; full filenames remain in tooltips, expanded page details and JSON. A new conversation clears context; JSON and terminal records are saved locally.
 
 QA requires your own API key and service balance. CNY 20 is the example spending cap. Resetting a conversation does not reset costs. Use a new recording directory on restart. Generation uses `qwen3.7-plus-2026-05-26` with thinking disabled.
 

@@ -7,7 +7,7 @@ import threading
 
 from .io import provenance, read_json, write_json
 from .query import load_retriever, load_search_session, process_memory, retrieve
-from .demo_style import CSS, EMPTY_ANSWER, BUSY_ANSWER
+from .demo_style import CSS, EMPTY_ANSWER, BUSY_ANSWER, document_label
 
 
 def display_request(model, config, index, pages, text, top_k, downloads, log=None, retrieval=None):
@@ -24,7 +24,7 @@ def display_request(model, config, index, pages, text, top_k, downloads, log=Non
                 # Return a bounded copy, not arbitrary filesystem URLs.
                 preview = image.convert('RGB')
                 preview.thumbnail((1000, 1400))
-                gallery.append((preview, f"{rank}. 第 {row['page_number']} 页 · {row['score']:.4f} · {name}"))
+                gallery.append((preview, f"{rank}. {document_label(name)} · 物理第 {row['page_number']} 页"))
         except (OSError, ValueError) as exc:
             warnings.append(f"第 {rank} 项预览不可读：{exc}")
     target = Path(downloads) / f'results-{time.time_ns()}.json'
@@ -65,7 +65,8 @@ def qa_display(result, pages):
         for pid in claim['evidence_page_ids']:
             page = mapping[pid]
             name = escape(page.get('document_name', page['doc_id']))
-            links.append(f'<a class="fr-citation" href="#qa-page-{quote(pid,safe="")}" title="{name}">{name} · 第 {page["page_number"]} 页</a>')
+            label = escape(document_label(page.get('document_name') or page['doc_id']))
+            links.append(f'<a class="fr-citation" href="#qa-page-{quote(pid,safe="")}" title="{name}">{label} · 第 {page["page_number"]} 页</a>')
         chunks.append('<article class="fr-claim"><p>'+escape(claim['text'])+
                       '</p><div class="fr-citations">'+''.join(links)+'</div></article>')
     chunks.append('</div>')
@@ -80,10 +81,12 @@ def qa_display(result, pages):
         chunks.append('<div class="fr-evidence-list"><h3>本轮读取的原页</h3>')
     for evidence in result['evidence']:
         pid = evidence['page_id']
-        name = escape(evidence.get('document_name') or mapping[pid].get('document_name') or pid)
+        full_name = evidence.get('document_name') or mapping[pid].get('document_name') or pid
+        name = escape(full_name)
         caption = f'{name} · 物理第 {evidence["page_number"]} 页'
+        label = f'{escape(document_label(full_name))} · 物理第 {evidence["page_number"]} 页'
         # Native details are revealed by fragment navigation to the figure inside.
-        chunks.append(f'<details class="fr-evidence"><summary>{caption}</summary><figure id="qa-page-{escape(pid)}"><figcaption>{caption}</figcaption>')
+        chunks.append(f'<details class="fr-evidence"><summary title="{name}">{label}</summary><figure id="qa-page-{escape(pid)}"><figcaption>{caption}</figcaption>')
         try:
             image,_ = read_evidence(mapping[pid],1310720)
             chunks.append(f'<img src="{escape(image["image_url"]["url"], quote=True)}" alt="{caption}">')
@@ -148,8 +151,16 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
 <div><h1>FolioRecall<span>页寻</span></h1><p>找到文档证据，展开有据可查的对话。</p></div></div>
 <div class="fr-badges"><span class="fr-badge">{len(pages)} 页文档库</span><span class="fr-badge">{escape(backend)}</span>
 <span class="fr-badge">{'视觉 + BM25' if retrieval else '视觉检索'}</span></div></header>''')
-        with gr.Tabs(elem_id='workspace-tabs'):
-          with gr.Tab('页面检索'):
+        documents = {}
+        for page in pages:
+            documents.setdefault(page['doc_id'], page.get('document_name') or page['doc_id'])
+        library = ''.join(f'<span title="{escape(name)}">{escape(document_label(name))}</span>'
+                          for name in list(documents.values())[:3])
+        if len(documents) > 3:
+            library += f'<span>另有 {len(documents) - 3} 份文档</span>'
+        gr.HTML(f'<div class="fr-library"><strong>当前文档库 · {len(documents)} 份 / {len(pages)} 页</strong>{library}</div>')
+        with gr.Tabs(selected='chat' if provider else 'search', elem_id='workspace-tabs'):
+          with gr.Tab('页面检索', id='search'):
             with gr.Row(elem_classes=['fr-workspace']):
               with gr.Column(scale=1, min_width=300, elem_classes=['fr-controls']):
                 gr.Markdown('## 查找原页\n输入英文问题，从文字、表格与图表中寻找相关页面。', elem_classes=['fr-section'])
@@ -157,8 +168,10 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
                 top_k = gr.Slider(1, min(10, len(pages)), value=min(5, len(pages)), step=1, label='返回页数', info='按相关性排序')
                 button = gr.Button('检索页面', variant='primary')
                 if examples:
-                    with gr.Accordion('试试这些问题', open=False):
-                        gr.Examples(examples=examples, inputs=text, label='示例问题')
+                    gr.Examples(examples=examples[:3], inputs=text, label='试试这些问题 · 点击填入，不自动提交')
+                    if len(examples) > 3:
+                        with gr.Accordion('更多示例', open=False):
+                            gr.Examples(examples=examples[3:], inputs=text, label='示例问题')
                 gr.Markdown('本地检索，不调用生成 API。相关性分数不代表答案正确概率。', elem_classes=['fr-note'])
               with gr.Column(scale=2, min_width=0, elem_classes=['fr-results']):
                 gr.Markdown('## 相关页面\n检索后点击缩略图放大，查看原始版面与物理页码。', elem_classes=['fr-section'])
@@ -178,7 +191,7 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
             text.submit(submit, [text, top_k], [gallery, table, download, status], api_name=False, concurrency_limit=1, concurrency_id='query')
           if provider:
             from .chat import new_session, stream_chat
-            with gr.Tab('文档问答'):
+            with gr.Tab('文档问答', id='chat'):
                 with gr.Row(elem_classes=['fr-workspace']):
                   with gr.Column(scale=1, min_width=330, elem_classes=['fr-controls']):
                     gr.Markdown('## 与文档对话\n提出问题，或接着上一轮继续追问。', elem_classes=['fr-section'])
@@ -191,13 +204,29 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
                     gr.Markdown('问答会调用百炼，并发送问题与相关公开页面。最近 3 轮成功回答用于理解追问。', elem_classes=['fr-note'])
                     history = gr.Chatbot(label='当前会话', height=260, allow_tags=False, elem_id='conversation',
                                          buttons=['copy', 'copy_all'])
-                    example_file = Path(folder) / 'qa-examples.json'
-                    if example_file.exists():
-                        with gr.Accordion('示例与使用说明', open=False):
-                            gr.Examples([[item['question'], item['mode']] for item in read_json(example_file)], inputs=[question, mode], label='示例问题')
-                            gr.Markdown('刷新或新建会话清空上下文，不清空费用。引用仅来自本轮读取的页面。', elem_classes=['fr-note'])
+                    gr.Markdown('刷新或新建会话清空上下文，不清空费用。引用仅来自本轮读取的页面。', elem_classes=['fr-note'])
                   with gr.Column(scale=2, min_width=0, elem_classes=['fr-results']):
                     answer_html = gr.HTML(value=EMPTY_ANSWER, elem_id='answer-panel')
+                    example_file = Path(folder) / 'qa-examples.json'
+                    if example_file.exists():
+                        starters, followups, fresh = [], [], []
+                        for item in read_json(example_file):
+                            (followups if item.get('followup') else fresh if item.get('new_conversation') else starters).append(item)
+                        if starters:
+                            gr.Examples([[item['question'], item['mode']] for item in starters[:3]],
+                                        inputs=[question, mode], label='从这里开始 · 点击填入，不自动提交')
+                        with gr.Accordion('追问与更多示例', open=False):
+                            if starters[3:]:
+                                gr.Examples([[item['question'], item['mode']] for item in starters[3:]],
+                                            inputs=[question, mode], label='更多首问')
+                            if followups:
+                                gr.Examples([[item['question'], item['mode']] for item in followups],
+                                            inputs=[question, mode], label='先完成相关首问，再使用追问')
+                            if fresh:
+                                gr.Examples([[item['question'], item['mode']] for item in fresh],
+                                            inputs=[question, mode], label='先点击新建会话，再尝试这些问题')
+                    else:
+                        gr.Markdown('从当前文档中的一个主题开始，例如询问某项结论及其证据页，再追问适用条件或时间范围。', elem_classes=['fr-note'])
                     progress = gr.HTML(elem_id='progress-panel')
                     with gr.Accordion('完整 JSON、工具记录与费用', open=False):
                         record_json = gr.JSON(label='本轮完整记录', elem_id='qa-json')

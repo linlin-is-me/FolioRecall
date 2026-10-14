@@ -106,9 +106,14 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(state['turns'], [])
 
     def test_progress_escapes_document_and_query_text(self):
-        value = progress_html([{'event':'search_pages','status':'completed','query':'<script>x</script>'}])
+        filename = 'employment_and_social_developments_in_europe-KE0125067ENN.pdf'
+        event = {'event':'read_page','status':'completed','page_id':'p1','page_number':3,'document_name':filename}
+        value = progress_html([{'event':'search_pages','status':'completed','query':'<script>x</script>'}, event])
         self.assertNotIn('<script>', value)
         self.assertIn('&lt;script&gt;', value)
+        self.assertIn(f'title="{filename}"', value)
+        self.assertIn('Employment and social developments in europe · 物理第3页', value)
+        self.assertEqual(event['document_name'], filename)
 
 
 if __name__ == '__main__':

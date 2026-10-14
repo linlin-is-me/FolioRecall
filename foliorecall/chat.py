@@ -8,6 +8,7 @@ import time
 import uuid
 
 from .io import write_json
+from .demo_style import document_label
 
 
 def new_session():
@@ -47,16 +48,19 @@ def progress_html(events):
                 'error': '错误', 'failed': '未完成', 'limit': '达到限额'}
     rows = []
     for event in events:
+        full_name = ''
         name = labels.get(event['event'], event['event'])
         detail = phases.get(event.get('phase'), '')
         if event.get('query'):
             detail = event['query']
         if event.get('page_id'):
-            detail = f"{event.get('document_name') or event['page_id']} · 物理第{event.get('page_number', '?')}页"
+            full_name = event.get('document_name') or event['page_id']
+            detail = f"{document_label(full_name)} · 物理第{event.get('page_number', '?')}页"
         if event.get('pages'):
             detail += ' · 返回' + str(len(event['pages'])) + '页'
         if 'sources' in event:
-            detail = '；'.join((s.get('document_name') or s['doc_id']) + '：候选物理页' +
+            full_name = '；'.join(s.get('document_name') or s['doc_id'] for s in event['sources'])
+            detail = '；'.join(document_label(s.get('document_name') or s['doc_id']) + '：候选物理页' +
                 ','.join(str(p['page_number']) for p in s['retrieved_pages']) + '，已读物理页' +
                 (','.join(str(p['page_number']) for p in s['read_pages']) or '无') for s in event['sources']) or '尚无候选或已读页面'
         if event.get('termination_reason'):
@@ -66,7 +70,7 @@ def progress_html(events):
         rows.append('<li><strong>' + html.escape(name) + '</strong><span class="fr-step-status ' +
                     html.escape(event['status'], quote=True) + '">' +
                     html.escape(statuses.get(event['status'], event['status'])) +
-                    '</span><small>' + html.escape(detail) + '</small></li>')
+                    '</span><small title="' + html.escape(full_name, quote=True) + '">' + html.escape(detail) + '</small></li>')
     latest = events[-1] if events else None
     current = (labels.get(latest['event'], latest['event']) + ' · ' +
                statuses.get(latest['status'], latest['status'])) if latest else '等待执行'

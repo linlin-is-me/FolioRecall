@@ -1,8 +1,25 @@
 """Presentation shared by the local retrieval and document-chat views."""
+import re
+
+
+def document_label(name, limit=46):
+    """A display-only filename label; records and citation IDs stay untouched."""
+    text = str(name).replace('\\', '/').rsplit('/', 1)[-1]
+    text = re.sub(r'\.(pdf|png|jpe?g|webp)$', '', text, flags=re.I)
+    # EU Publications Office filenames append a catalogue code to the title.
+    text = re.sub(r'[-_][A-Z]{2}\d{7}[A-Z]{3}$', '', text)
+    text = ' '.join(text.replace('_', ' ').split())
+    text = text[:1].upper() + text[1:]
+    if len(text) > limit:
+        prefix = text[:limit - 1]
+        boundary = prefix.rfind(' ')
+        text = (prefix[:boundary] if boundary > limit // 2 else prefix) + '…'
+    return text
 
 EMPTY_ANSWER = '''<div class="fr-empty">
 <span class="fr-eyebrow">答案与证据</span><h3>从一个文档问题开始</h3>
-<p>回答会附上本轮原页引用。执行步骤与完整记录可在下方查看。</p></div>'''
+<p>输入文档问题，或从下方示例开始，再提交问答。RAG 读取检索前页直接回答，Agent 可继续搜索与读页。</p>
+<p>回答后可用中文追问；点击引用查看原页。换话题时新建会话。</p></div>'''
 
 BUSY_ANSWER = '''<div class="fr-empty" role="status">
 <span class="fr-eyebrow">正在执行</span><h3>正在查找文档证据</h3>
@@ -34,6 +51,10 @@ CSS = '''
 .fr-badges { display: flex; gap: 8px; flex-wrap: wrap; }
 .fr-badge { border: 1px solid var(--fr-line); border-radius: 20px; padding: 6px 11px;
   font-size: 12px; color: var(--fr-muted); background: var(--fr-surface); }
+.fr-library { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px;
+  padding: 0 0 16px; font-size: 12px; color: var(--fr-muted); }
+.fr-library strong { color: var(--fr-ink); font-weight: 550; }
+.fr-library span { overflow-wrap: anywhere; }
 #workspace-tabs .tab-container { gap: 6px; padding-bottom: 10px; }
 #workspace-tabs .tab-container button { padding: 10px 22px; font-weight: 600; border-radius: 9px; }
 #workspace-tabs .tab-container button.selected { background: var(--fr-tint); color: var(--fr-accent); border: 0; }

@@ -34,11 +34,12 @@ class DemoTests(unittest.TestCase):
                 if 'id' in attrs: self.ids.append(attrs['id'])
                 if 'href' in attrs: self.hrefs.append(attrs['href'])
         pid = 'JRC141952:页&1'
+        filename = 'employment_and_social_developments_in_europe-KE0125067ENN.pdf'
         result = {'answer': {'claims': [{'text': '<script>unsafe</script>',
                    'evidence_page_ids': [pid]}], 'unresolved': []},
                   'evidence': [{'page_id': pid, 'page_number': 1}],
                   'timing': {'task_seconds': .1}}
-        pages = [{'page_id': pid, 'doc_id': 'document', 'page_number': 1}]
+        pages = [{'page_id': pid, 'doc_id': 'document', 'document_name': filename, 'page_number': 1}]
         with patch('foliorecall.agent.read_evidence', return_value=(
                 {'image_url': {'url': 'data:image/png;base64,AA=='}}, {})):
             rendered = qa_display(result, pages)
@@ -46,6 +47,10 @@ class DemoTests(unittest.TestCase):
         parsed.feed(rendered)
         self.assertEqual(unquote(parsed.hrefs[0][1:]), parsed.ids[0])
         self.assertNotIn('<script>', rendered)
+        self.assertIn('Employment and social developments in europe · 第 1 页</a>', rendered)
+        self.assertIn(f'title="{filename}"', rendered)
+        self.assertIn(f'<figcaption>{filename} · 物理第 1 页</figcaption>', rendered)
+        self.assertEqual(pages[0]['document_name'], filename)
         self.assertGreaterEqual(result['timing']['task_and_display_seconds'], .1)
 
     def test_display_reuses_ranking_and_reports_missing_preview(self):
@@ -62,6 +67,8 @@ class DemoTests(unittest.TestCase):
             retrieve.assert_called_once()
             self.assertEqual(len(gallery), 1)
             self.assertEqual(table[0][2], 4)
+            self.assertEqual(table[0][1], 'doc.pdf')
+            self.assertIn('Doc · 物理第 4 页', gallery[0][1])
             self.assertEqual(json.loads(Path(download).read_text()), rows)
             self.assertIn('预览不可读', message)
 
