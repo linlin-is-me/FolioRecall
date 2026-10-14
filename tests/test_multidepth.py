@@ -78,6 +78,23 @@ class MultiDepthTests(unittest.TestCase):
         for depth in [True,5,'4']:
             with self.assertRaises(ValueError):validate_backend({'num_layers':depth})
 
+    def test_faiss_thread_limit_restores_encoding_threads(self):
+        from unittest.mock import patch
+        import faiss
+        from foliorecall.query import retrieve
+        faiss.omp_set_num_threads(4)
+        calls=[]
+        def encode(*args):
+            calls.append(('encode',faiss.omp_get_max_threads()))
+            return np.array([[1.,0.]],dtype=np.float32)
+        def search(*args):
+            calls.append(('search',faiss.omp_get_max_threads()))
+            return [[{'page_id':'a'}]]
+        with patch('foliorecall.query.encode_query_texts',side_effect=encode),patch('foliorecall.query.search',side_effect=search):
+            retrieve(None,{'device':'cpu'},None,[], 'one',search_threads=1)
+        self.assertEqual(calls,[('encode',4),('search',1)])
+        self.assertEqual(faiss.omp_get_max_threads(),4)
+
     def test_two_heads_optimizer_and_rng_resume_match_continuous_training(self):
         from copy import deepcopy
         from datasets import Dataset

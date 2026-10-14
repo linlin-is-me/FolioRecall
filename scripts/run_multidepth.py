@@ -91,7 +91,7 @@ def worker(root,arm,output,domain=None):
     index,pages=load_index(index_path,teacher)
     validate_candidate_corpus(pages,read_rows(data/'pages.jsonl'))
     started=time.perf_counter();model=load_query_encoder(cfg);loading=time.perf_counter()-started
-    result=benchmark(model,cfg,index,pages,read_rows(data/'queries.jsonl'),read_json(data/'qrels.json'),warmups=5,repeats=3 if domain else 1)
+    result=benchmark(model,cfg,index,pages,read_rows(data/'queries.jsonl'),read_json(data/'qrels.json'),warmups=5,repeats=3 if domain else 1,search_threads=1)
     result.update(arm=arm,domain=domain or 'dev',model_loading_seconds=loading)
     write_json(output/'result.json',result)
     return {k:result[k] for k in ['arm','domain','metrics','request_seconds','warm_memory']}
@@ -137,7 +137,8 @@ def report(root):
             'end_rss_bytes':[r['final_memory']['rss_bytes'] for r in results],
             'peak_rss_bytes':[r['final_memory']['peak_rss_bytes'] for r in results],
             'parameter_count':a['parameter_count'],'model_package_bytes':a['model_package_bytes'],
-            'repeat_ranking_changes':sum(sum(x['ranking']!=y['ranking'] for x,y in zip(a['results'],b['results'])) for b in results[1:])}
+            'repeat_ranking_changes':sum(sum([p['page_id'] for p in x['ranking']]!=[p['page_id'] for p in y['ranking']]
+                for x,y in zip(a['results'],b['results'])) for b in results[1:])}
     pairs={};cases={}
     comparisons=[('public6',arm) for arm in ARMS[1:]]+[
         ('pruned4','independent4'),('independent4','joint4'),('ordinary6','joint6')]

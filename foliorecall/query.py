@@ -132,7 +132,7 @@ def encode_query_texts(model, texts, config):
     return vectors / norms
 
 
-def retrieve(model, config, index, pages, text, top_k=5, retrieval=None):
+def retrieve(model, config, index, pages, text, top_k=5, retrieval=None, search_threads=None):
     def sync():
         if config["device"] == "cuda":
             import torch
@@ -144,7 +144,18 @@ def retrieve(model, config, index, pages, text, top_k=5, retrieval=None):
     vectors = encode_query_texts(model, [text], config)
     sync()
     encoded = time.perf_counter()
-    ranked = search(index, pages, vectors, 50 if retrieval else top_k)[0]
+    # Torch and FAISS can share OpenMP. Limit only the search, then restore the
+    # encoding thread count. Optional for benchmarks; normal requests unchanged.
+    if search_threads is None:
+        ranked = search(index, pages, vectors, 50 if retrieval else top_k)[0]
+    else:
+        import faiss
+        previous = faiss.omp_get_max_threads()
+        try:
+            faiss.omp_set_num_threads(search_threads)
+            ranked = search(index, pages, vectors, 50 if retrieval else top_k)[0]
+        finally:
+            faiss.omp_set_num_threads(previous)
     if retrieval:
         from .retrieval import hybrid_ranking
         ranked = hybrid_ranking(retrieval, pages, text, ranked, top_k)
@@ -213,7 +224,7 @@ def weight_file_bytes(config):
     return model_file_sizes(config)['weight_file_bytes']
 
 
-def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3, retrieval=None):
+def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3, retrieval=None, search_threads=None):
     import torch
     import faiss
     from .evaluation import metrics
@@ -226,8 +237,11 @@ def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3,
     for qid in ids:
         if not set(qrels[qid]).issubset(candidates):
             raise ValueError("候选库缺失 qrels 页面")
+    options = dict(retrieval=retrieval) if retrieval else {}
+    if search_threads is not None:
+        options['search_threads'] = search_threads
     for i in range(warmups):
-        retrieve(model, config, index, pages, queries[i % len(queries)]["query"], 10, **({'retrieval': retrieval} if retrieval else {}))
+        retrieve(model, config, index, pages, queries[i % len(queries)]["query"], 10, **options)
     warm_memory = process_memory()
     loading_warmup_cuda = {'allocated_bytes': torch.cuda.max_memory_allocated(),
                            'reserved_bytes': torch.cuda.max_memory_reserved()} if config['device'] == 'cuda' else None
@@ -239,7 +253,7 @@ def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3,
     for repeat in range(repeats):
         current = []
         for query in queries:
-            ranked, _, times = retrieve(model, config, index, pages, query["query"], 10, **({'retrieval': retrieval} if retrieval else {}))
+            ranked, _, times = retrieve(model, config, index, pages, query["query"], 10, **options)
             row = dict(times, repeat=repeat, query_id=str(query["query_id"]))
             requests.append(row)
             current.append(row)
@@ -259,7 +273,8 @@ def benchmark(model, config, index, pages, queries, qrels, warmups=5, repeats=3,
         "peak_cuda_reserved_bytes": torch.cuda.max_memory_reserved() if config["device"] == "cuda" else None,
         "gpu": torch.cuda.get_device_name() if config["device"] == "cuda" else None,
         "torch_threads": torch.get_num_threads(), "torch_version": torch.__version__,
-        "faiss_threads": faiss.omp_get_max_threads(),
+        "faiss_threads": search_threads if search_threads is not None else faiss.omp_get_max_threads(),
+        "thread_scope": "FAISS-only thread switch included in request time; restored before next encoding" if search_threads else "current process OpenMP settings",
         "cpu": next((line.split(':', 1)[1].strip() for line in Path("/proc/cpuinfo").read_text().splitlines()
                      if line.startswith("model name")), None) if Path("/proc/cpuinfo").exists() else None,
         "parameter_count": None if config.get('backend') == 'onnx' else sum(p.numel() for p in model.parameters()),

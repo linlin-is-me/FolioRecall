@@ -215,7 +215,8 @@ def distill(query_config, targets, output, index, data, limit=None, max_steps=No
                 raise ValueError('四层出口投影未实际更新')
             # Checkpoint heads support resume; deploy packages only contain one exit.
             for depth in depths:
-                _, cfg = export_exit(model, depth, output/f'exports/depth-{depth}', query_config,
+                export_root = output/'exports' if complete else run/'partial-exits'
+                _, cfg = export_exit(model, depth, export_root/f'depth-{depth}', query_config,
                                      loss.head4 if depth == 4 else None)
                 exits[str(depth)] = cfg
         # A small CPU roundtrip is independent of BF16 inference rounding.
