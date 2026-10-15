@@ -130,15 +130,31 @@ def prepare_task(task, output, training=None, hr_reuse='data/hr'):
                      'training_file': training['path'] if training else None})
     started = time.perf_counter()
     files = HfApi().list_repo_files(task['dataset'], repo_type='dataset', revision=task['revision'])
+    v2 = task.get('format') == 'vidore-v2'
+    group_names = ('corpus', 'queries', 'qrels', 'documents_metadata') + (('docs',) if v2 else ())
     files = sorted(f for f in files if f.endswith('.parquet') and
-                   f.split('/')[0] in ('corpus', 'queries', 'qrels', 'documents_metadata'))
-    groups = {key: [] for key in ('corpus', 'queries', 'qrels', 'documents_metadata')}
+                   f.split('/')[0] in group_names and
+                   (not v2 or Path(f).name.startswith('test-')))
+    groups = {key: [] for key in group_names}
+    # V2 corpora include large images. Reuse our existing ranged/resumable
+    # downloader rather than a new network implementation or a slow single stream.
+    sizes = {r.path: r.size for r in HfApi().get_paths_info(task['dataset'], files,
+             repo_type='dataset', revision=task['revision'])} if v2 else {}
     sources = []
     for filename in files:
         cached = try_to_load_from_cache(task['dataset'], filename, repo_type='dataset', revision=task['revision'])
         was_cached = isinstance(cached, str) and Path(cached).is_file()
         print(f"{task['name']}: {'reuse' if was_cached else 'download'} {filename}", flush=True)
-        path = Path(hf_hub_download(task['dataset'], filename, repo_type='dataset', revision=task['revision']))
+        if was_cached:
+            path = Path(cached)
+        elif v2:
+            from .data_preparation import download_shard
+            path = output / 'source-parquet' / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            download_shard(f"https://huggingface.co/datasets/{task['dataset']}/resolve/{task['revision']}/{filename}",
+                           path, sizes[filename])
+        else:
+            path = Path(hf_hub_download(task['dataset'], filename, repo_type='dataset', revision=task['revision']))
         groups[filename.split('/')[0]].append(path)
         sources.append({'file': filename, 'path': str(path), 'bytes': path.stat().st_size, 'already_cached': was_cached})
     download_seconds = time.perf_counter() - started
@@ -157,7 +173,10 @@ def prepare_task(task, output, training=None, hr_reuse='data/hr'):
         columns = None if not reuse else [c for c in parquet.schema_arrow.names if c != 'image']
         for batch in parquet.iter_batches(batch_size=8, columns=columns):
             for row in batch.to_pylist():
-                pid, doc_id = str(row['corpus_id']), str(row['doc_id'])
+                pid = f"{task['name']}:{row['corpus-id']}" if v2 else str(row['corpus_id'])
+                doc_id = str(row.get('doc-id') or row.get('pdf_url')) if v2 else str(row['doc_id'])
+                if v2 and not (row.get('doc-id') or row.get('pdf_url')):
+                    raise ValueError(f'V2页面缺少来源文档: {pid}')
                 if pid in reuse:
                     preview = Path(reuse[pid]['preview'])
                     if not preview.is_file():
@@ -174,22 +193,34 @@ def prepare_task(task, output, training=None, hr_reuse='data/hr'):
                     if not preview.exists():
                         preview.write_bytes(raw)
                 filename = doc_id if doc_id.endswith('.pdf') else doc_id + '.pdf'
-                pages.append({'page_id': pid, 'row_index': len(pages), 'doc_id': doc_id,
-                    'page_number': int(row['page_number_in_doc']) + 1,
-                    'dataset_page_number': row['page_number_in_doc'], 'preview': str(preview.resolve()),
-                    'source': f"https://huggingface.co/datasets/{task['dataset']}/resolve/{task['revision']}/pdfs/{filename}",
-                    'document_name': filename})
+                if v2:
+                    pages.append({'page_id': pid, 'dataset_page_id': str(row['corpus-id']),
+                        'row_index': len(pages), 'doc_id': f"{task['name']}:{doc_id}",
+                        'document_name': row.get('doc-id') or Path(doc_id).name,
+                        'page_number': None, 'page_number_kind': 'unknown_original_pdf',
+                        'preview': str(preview.resolve()),
+                        'source': row.get('pdf_url') or f"https://huggingface.co/datasets/{task['dataset']}/tree/{task['revision']}",
+                        'dataset': task['dataset'], 'revision': task['revision']})
+                else:
+                    pages.append({'page_id': pid, 'row_index': len(pages), 'doc_id': doc_id,
+                        'page_number': int(row['page_number_in_doc']) + 1,
+                        'dataset_page_number': row['page_number_in_doc'], 'preview': str(preview.resolve()),
+                        'source': f"https://huggingface.co/datasets/{task['dataset']}/resolve/{task['revision']}/pdfs/{filename}",
+                        'document_name': filename})
                 texts.append({'page_id': pid, 'text': row.get('markdown') or ''})
             if len(pages) % 200 == 0:
                 print(f"{task['name']}: prepared {len(pages)} pages", flush=True)
     all_queries = [row for p in groups['queries'] for row in pq.read_table(p).to_pylist()]
-    queries = [dict(row, query_id=str(row['query_id'])) for row in all_queries
-               if str(row['language']).casefold() in ('en', 'english')]
+    queries = [dict(row, query_id=f"{task['name']}:{row['query-id']}" if v2 else str(row['query_id']))
+               for row in all_queries
+               if str(row.get('language', 'en' if v2 else '')).casefold() in ('en', 'english')]
     queries.sort(key=lambda row: row['query_id'])
     qrels = {row['query_id']: {} for row in queries}
     for p in groups['qrels']:
         for row in pq.read_table(p).to_pylist():
-            qid, pid, score = str(row['query_id']), str(row['corpus_id']), float(row['score'])
+            qid = f"{task['name']}:{row['query-id']}" if v2 else str(row['query_id'])
+            pid = f"{task['name']}:{row['corpus-id']}" if v2 else str(row['corpus_id'])
+            score = float(row['score'])
             if qid in qrels:
                 if pid in qrels[qid]:
                     raise ValueError(f'重复 qrel: {qid}/{pid}')
@@ -206,6 +237,7 @@ def prepare_task(task, output, training=None, hr_reuse='data/hr'):
         'source_bytes': sum(f['bytes'] for f in sources),
         'new_source_file_bytes': sum(f['bytes'] for f in sources if not f['already_cached']),
         'extracted_image_bytes': sum(p.stat().st_size for p in images.iterdir() if p.is_file()),
+        'documents': len({p['doc_id'] for p in pages}),
         'reused_hr_pages': len(reuse), 'download_seconds': download_seconds,
         'preparation_seconds': time.perf_counter() - started - download_seconds,
         'training_overlap': overlap,

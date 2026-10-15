@@ -1,0 +1,8 @@
+{
+  "scope": "New project-query holdout; document-level isolation and upstream overlap unverified",
+  "tasks": [
+    {"name": "biomedical", "format": "vidore-v2", "dataset": "vidore/biomedical_lectures_eng_v2", "revision": "e82eb2f3e9f701688e6f3ba41fffad68c5b3b5fa", "pages": 1016, "english_queries": 160},
+    {"name": "economics", "format": "vidore-v2", "dataset": "vidore/economics_reports_eng_v2", "revision": "d4fba7cf3d620c42810d961435afcfaaa0678e8d", "pages": 452, "english_queries": 58},
+    {"name": "esg_human", "format": "vidore-v2", "dataset": "vidore/esg_reports_human_labeled_v2", "revision": "5a338c329bf1608ac46ac2808060d44bcd92d521", "pages": 1538, "english_queries": 52}
+  ]
+}

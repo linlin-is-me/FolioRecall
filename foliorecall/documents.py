@@ -15,7 +15,8 @@ def validate_pages(rows):
         for key in ("doc_id", "source", "preview", "page_number"):
             if key not in row:
                 raise ValueError(f"页面缺少 {key}: {row['page_id']}")
-        if not isinstance(row["page_number"], int) or row["page_number"] < 1:
+        unknown = row["page_number"] is None and row.get("page_number_kind") == "unknown_original_pdf"
+        if not unknown and (not isinstance(row["page_number"], int) or row["page_number"] < 1):
             raise ValueError("page_number 必须是从 1 开始的物理页码")
         if not Path(row["preview"]).is_file():
             raise ValueError(f"预览不存在: {row['preview']}")
