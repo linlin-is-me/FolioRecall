@@ -11,6 +11,8 @@ FolioRecall combines visual retrieval and BM25 for documents containing text, ta
 > The local `0.1.0` final candidate is complete: multi-turn Agent features, the recommended ONNX FP32 backend, refreshed layout and onboarding, and the project logo. It awaits review; updated source has not been pushed and assets have not been published.
 > [Candidate review](doc/v0.1.0发布说明.md) · [Complete quick start](doc/v0.1.0快速开始.md)
 
+The next phase focuses on multi-agent collaboration for complex document research: distinct evidence responsibilities, analysis, shared evidence and verification with targeted rework. The [development plan](doc/多模态文档检索项目开发计划.md#multi-agent-research-plan) is updated; these additions are not implemented yet. Available features, candidates and measured results are described below.
+
 ## A real document task
 
 Ask how two European reports describe working-age population and employment, then ask in Chinese for evidence pages and time ranges. Searches, page reads and model requests appear as they happen, followed by claims, original-page citations and saved JSON.
