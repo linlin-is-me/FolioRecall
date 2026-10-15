@@ -335,6 +335,13 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
                     gr.Markdown(f'协作模式最多 {multi_config.get("max_parallel_workers",2)} 个检索Agent并行、{multi_config["max_requests"]} 次请求、{multi_config["max_pages"]} 页；仅检索编码串行。')
     try:
         app.launch(server_name='127.0.0.1', server_port=port, share=False, inbrowser=False,
-                   theme=theme, css=CSS, favicon_path=str(LOGO_PATH))
+                   theme=theme, css=CSS, favicon_path=str(LOGO_PATH),
+                   js="""() => {
+                     const url = new URL(window.location.href);
+                     if (!url.searchParams.has('__theme')) {
+                       url.searchParams.set('__theme', 'light');
+                       window.location.replace(url.toString());
+                     }
+                   }""")
     finally:
         temporary.cleanup()
