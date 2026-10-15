@@ -318,7 +318,13 @@ def build_research_graph(runtime, saver):
         r.emit('research_analysis','started',role='analyst',version=version)
         _, contract = answer_contract(r.execution.question)
         messages = [{'role':'system','content':COLLABORATION_RULES+'\nAnalyze the actual pages, not merely worker summaries. '
-            'Return JSON with exactly keys answer, coverage, calculations. answer uses the three-field answer format below. '
+            'Return JSON with exactly keys answer, coverage, calculations. '
+            'The answer value MUST contain exactly claims, insufficient_evidence, unresolved; '
+            'it has NO text or summary field. Put claims INSIDE answer, never at the outer level. '
+            'Exact nested format (replace illustrative content and READ_PAGE_ID with actual evidence): '
+            '{"answer":{"claims":[{"text":"Supported fact.","evidence_page_ids":["READ_PAGE_ID"]}],'
+            '"insufficient_evidence":false,"unresolved":[]},'
+            '"coverage":[{"requirement_id":"r1","covered":true,"note":"evidence checked"}],"calculations":[]}. '
             'coverage is an array of {requirement_id, covered: boolean, note}. '
             'calculations is an array of {operation: add|subtract|multiply|divide|percent, a: number, b: number, '
             'result: number, unit: string, evidence_page_ids: string[]}; use [] when no numeric calculation is needed. '
