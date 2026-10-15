@@ -40,6 +40,7 @@ def messages_for(session):
 
 def progress_html(events):
     labels = {'queued': '等待执行', 'model_request': '模型请求', 'query_rewrite': '追问改写',
+              'coordinate': '任务分工', 'evidence_merge': '证据汇合',
               'search_pages': '搜索页面', 'read_page': '读取页面', 'source_access_status': '来源读取状态',
               'final_answer': '最终回答', 'terminal': '任务结束'}
     phases = {'query_translation': '中文转换', 'query_rewrite': '追问改写',
@@ -50,6 +51,8 @@ def progress_html(events):
     for event in events:
         full_name = ''
         name = labels.get(event['event'], event['event'])
+        if event.get('role'):
+            name = ('协调器' if event['role']=='coordinator' else event['role'].replace('worker-','检索Agent ')) + ' · ' + name
         detail = phases.get(event.get('phase'), '')
         if event.get('query'):
             detail = event['query']
@@ -67,6 +70,10 @@ def progress_html(events):
             detail = event['termination_reason']
         if event.get('reason'):
             detail += ' · ' + event['reason']
+        if event.get('role') and 'elapsed_seconds' in event:
+            detail += f' · {event["elapsed_seconds"]:.1f}秒'
+        if event.get('cost_cny') is not None:
+            detail += f' · {event["cost_cny"]:.6f}元'
         rows.append('<li><strong>' + html.escape(name) + '</strong><span class="fr-step-status ' +
                     html.escape(event['status'], quote=True) + '">' +
                     html.escape(statuses.get(event['status'], event['status'])) +
@@ -84,12 +91,14 @@ def stream_chat(question, mode, session, execute, pages, request_lock, output=No
         raise ValueError('请输入问题')
     current = copy.deepcopy(session or new_session())
     packets, events = queue.Queue(), []
+    event_lock = threading.Lock()
     pending = messages_for(current) + [{'role': 'user', 'content': question},
                                        {'role': 'assistant', 'content': '正在执行…'}]
 
     def event(value):
-        events.append(value)
-        packets.put(('event', list(events)))
+        with event_lock:
+            events.append(value)
+            packets.put(('event', list(events)))
 
     def worker():
         try:
@@ -97,10 +106,14 @@ def stream_chat(question, mode, session, execute, pages, request_lock, output=No
                 result = execute(question, mode, recent_context(current), event)
                 result.update(conversation_id=current['conversation_id'],
                               turn_index=len(current['turns'])+1, progress=list(events))
+                # Preserve the terminal before rendering; a preview failure must not lose paid work.
+                record_path = Path(output) / f'qa-{time.time_ns()}.json' if output else None
+                if output:
+                    write_json(record_path, result)
                 from .demo import qa_display
                 rendered = qa_display(result, pages)
-                if output:
-                    write_json(Path(output) / f'qa-{time.time_ns()}.json', result)
+                if record_path:
+                    write_json(record_path, result)
             packets.put(('result', (result, rendered)))
         except Exception as exc:
             packets.put(('error', exc))

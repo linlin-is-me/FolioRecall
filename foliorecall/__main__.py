@@ -23,10 +23,11 @@ def main():
         qa.add_argument('--retrieval-config')
         qa.add_argument('--agent-config', required=True)
         qa.add_argument('--public-corpus', required=True, help='确认可发送的公开页面和来源清单')
-        qa.add_argument('--mode', choices=('rag','agent'), required=True)
+        qa.add_argument('--mode', choices=('rag','agent','multi-agent') if name == 'ask' else ('rag','agent'), required=True)
         qa.add_argument('--output', required=True)
         if name == 'ask':
             qa.add_argument('question')
+            qa.add_argument('--resume', action='store_true', help='仅恢复 multi-agent 的原任务目录')
         else:
             qa.add_argument('--tasks', required=True)
             qa.add_argument('--repeats', type=int, default=1)
@@ -46,6 +47,7 @@ def main():
     serve.add_argument("--query-config", required=True)
     serve.add_argument('--retrieval-config')
     serve.add_argument('--agent-config')
+    serve.add_argument('--multi-agent-config', help='可选的协作模式配置；需同时提供问答配置、公开语料和输出目录')
     serve.add_argument('--public-corpus')
     serve.add_argument("--port", type=int, default=7860)
     serve.add_argument("--output", help="可选的应用验证记录目录，不记录到已有实验中")
@@ -131,18 +133,35 @@ def main():
         from .query import load_search_session
         teacher, student = read_json(args.config), read_json(args.query_config)
         agent_config = read_agent_config(args.agent_config)
-        if Path(args.output).exists():
+        if args.resume and args.mode != 'multi-agent':
+            raise ValueError('ask --resume 仅适用于 multi-agent')
+        if Path(args.output).exists() and not (args.mode == 'multi-agent' and args.resume):
             raise ValueError('问答输出目录已存在，请使用新目录')
+        if args.mode == 'multi-agent':
+            from .multi_agent import ask_multi, require_multiagent
+            require_multiagent()
         _, corpus_pages = load_index(args.index, teacher)
         evidence_texts = load_public_corpus(args.public_corpus, corpus_pages)
+        if args.mode == 'multi-agent' and args.resume and (Path(args.output)/'result.json').exists():
+            from .qa_runtime import transient
+            saved = read_json(Path(args.output)/'result.json')
+            if saved['completed'] or not transient(saved['termination_reason']) or len(list(Path(args.output).glob('attempt-*.json'))) >= 2:
+                result = ask_multi(args.question,None,student,None,corpus_pages,agent_config,None,args.output,
+                                   retrieval=retrieval_config,evidence_texts=evidence_texts,resume=True)
+                print(json.dumps(result,ensure_ascii=False,indent=2))
+                return 0 if result['completed'] else 75
         provider = Bailian(agent_config)
         loading_started = time.perf_counter()
         model, index, pages, retrieval = load_search_session(args.index,teacher,student,retrieval_config=retrieval_config)
         loading_seconds = time.perf_counter()-loading_started
         if args.command == 'ask':
-            provenance(args.output, {'page_config':teacher,'query_config':student,'agent_config':agent_config,
-                'retrieval_config':retrieval_config,'public_corpus':args.public_corpus,'mode':args.mode})
-            result=ask(args.question,args.mode,model,student,index,pages,agent_config,provider,retrieval,evidence_texts)
+            if args.mode == 'multi-agent':
+                result=ask_multi(args.question,model,student,index,pages,agent_config,provider,args.output,
+                                 retrieval,evidence_texts,resume=args.resume)
+            else:
+                provenance(args.output, {'page_config':teacher,'query_config':student,'agent_config':agent_config,
+                    'retrieval_config':retrieval_config,'public_corpus':args.public_corpus,'mode':args.mode})
+                result=ask(args.question,args.mode,model,student,index,pages,agent_config,provider,retrieval,evidence_texts)
             result['loading_seconds']=loading_seconds
             write_json(Path(args.output)/'result.json',result)
             print(json.dumps(result,ensure_ascii=False,indent=2))
@@ -155,7 +174,8 @@ def main():
     if args.command == "serve":
         from .demo import serve_demo
         serve_demo(args.index, read_json(args.config), read_json(args.query_config), args.port, args.output,
-                   retrieval_config=retrieval_config, agent_config_path=args.agent_config, public_corpus=args.public_corpus)
+                   retrieval_config=retrieval_config, agent_config_path=args.agent_config, public_corpus=args.public_corpus,
+                   multi_agent_config_path=args.multi_agent_config)
         return 0
     if args.command == "cache-teacher":
         from .targets import cache_teacher

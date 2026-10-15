@@ -21,6 +21,7 @@ dependencies = [
 onnx = ["onnx==1.23.2", "onnxruntime==1.23.2"]
 demo = ["gradio==6.27.0"]
 agent = ["httpx==0.28.1", "rank-bm25==0.2.2"]
+multiagent = ["httpx==0.28.1", "rank-bm25==0.2.2", "langgraph==1.2.15", "langgraph-checkpoint-sqlite==3.1.2"]
 image = ["torchvision==0.23.0", "pypdfium2==5.13.0"]
 train = ["accelerate==1.14.0", "peft==0.20.0", "datasets==5.0.1"]
 eval = ["pyarrow==25.0.1", "rank-bm25==0.2.2", "pytrec-eval-terrier==0.5.10"]

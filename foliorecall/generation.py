@@ -143,8 +143,10 @@ def validate_agent_config(config):
         raise ValueError('仅支持已配置的北京百炼固定快照，不能自动替换模型或地域')
     if config.get('temperature') != 0 or config.get('enable_thinking') is not False:
         raise ValueError('必须关闭思考并设置 temperature=0')
-    bounds = {'max_searches': 3, 'max_pages': 6, 'max_requests': 8,
-              'max_output_tokens': 8000, 'request_timeout': 60, 'task_timeout': 180,
+    if type(config.get('max_parallel_workers', 2)) is not int or config.get('max_parallel_workers', 2) not in (1, 2):
+        raise ValueError('max_parallel_workers 必须为1或2')
+    bounds = {'max_searches': 4, 'max_pages': 8, 'max_requests': 12,
+              'max_output_tokens': 12000, 'request_timeout': 60, 'task_timeout': 240,
               'max_pixels': 1310720}
     for key, maximum in bounds.items():
         if type(config.get(key)) is not int or not 1 <= config[key] <= maximum:

@@ -106,7 +106,7 @@ def qa_display(result, pages):
 
 
 def serve_demo(folder, teacher_config, query_config, port=7860, output=None, retrieval_config=None,
-               agent_config_path=None, public_corpus=None):
+               agent_config_path=None, public_corpus=None, multi_agent_config_path=None):
     try:
         import gradio as gr
     except ImportError as exc:
@@ -116,6 +116,12 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
     if output and Path(output).exists():
         raise ValueError('演示验证记录目录已存在，请使用新目录')
     provider, agent_config, evidence_texts = None, None, None
+    multi_config, multi_provider = None, None
+    if multi_agent_config_path:
+        from .multi_agent import require_multiagent
+        require_multiagent()
+        if not agent_config_path or not public_corpus or not output:
+            raise ValueError('协作模式需要 --agent-config、--public-corpus 和 --output')
     if agent_config_path:
         from .generation import read_agent_config, Bailian
         from .agent import load_public_corpus
@@ -126,6 +132,12 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
         _, corpus_pages = load_index(folder, teacher_config)
         evidence_texts = load_public_corpus(public_corpus, corpus_pages)
         provider = Bailian(agent_config)
+        if multi_agent_config_path:
+            multi_config = read_agent_config(multi_agent_config_path)
+            for key in ('model','region','ledger','phase_budget_cny'):
+                if multi_config[key] != agent_config[key]:
+                    raise ValueError('协作与原问答须共用模型、地域、费用账本和上限')
+            multi_provider = Bailian(multi_config)
     started = time.perf_counter()
     model, index, pages, retrieval = load_search_session(folder, teacher_config, query_config,
                                                         retrieval_config=retrieval_config)
@@ -143,6 +155,7 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
     examples = [[q['query']] for q in read_json(examples_path)] if examples_path.exists() else []
     temporary = tempfile.TemporaryDirectory(prefix='foliorecall-demo-')
     request_lock = threading.Lock()
+    query_lock = threading.Lock()
     from html import escape
     backend = 'ONNX CPU' if query_config.get('backend') == 'onnx' else query_config['device'].upper()
     logo = base64.b64encode(WORDMARK_PATH.read_bytes()).decode('ascii')
@@ -198,7 +211,13 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
                 with gr.Row(elem_classes=['fr-workspace']):
                   with gr.Column(scale=1, min_width=330, elem_classes=['fr-controls']):
                     gr.Markdown('## 与文档对话\n提出问题，或接着上一轮继续追问。', elem_classes=['fr-section'])
-                    mode = gr.Radio([('RAG · 直接回答','rag'), ('Agent · 工具补查','agent')], value='rag', label='回答方式')
+                    choices = [('RAG · 直接回答','rag'), ('Agent · 工具补查','agent')]
+                    if multi_config:
+                        choices.append(('多Agent · 协作检索','multi-agent'))
+                    mode = gr.Radio(choices, value='rag', label='回答方式')
+                    limits = gr.Markdown(f'每轮最多读取 {agent_config["max_pages"]} 页。', elem_classes=['fr-note'])
+                    mode.change(lambda selected:f'每轮最多读取 {(multi_config if selected=="multi-agent" else agent_config)["max_pages"]} 页。',
+                                mode, limits, api_name=False)
                     session = gr.State(None)
                     question = gr.Textbox(label='英文或中文问题', placeholder='输入问题，或追问证据、条件与时间范围…', lines=3)
                     with gr.Row():
@@ -237,7 +256,12 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
                     from .agent import ask
                     try:
                         with request_lock:
-                            result = ask(query,selected_mode,model,query_config,index,pages,agent_config,provider,retrieval,evidence_texts)
+                            if selected_mode == 'multi-agent':
+                                from .multi_agent import ask_multi
+                                result = ask_multi(query,model,query_config,index,pages,multi_config,multi_provider,
+                                    Path(output)/'collaboration'/f'ask-{time.time_ns()}',retrieval,evidence_texts,query_lock=query_lock)
+                            else:
+                                result = ask(query,selected_mode,model,query_config,index,pages,agent_config,provider,retrieval,evidence_texts)
                             rendered = qa_display(result,pages)
                             if output:
                                 write_json(Path(output)/f'qa-{time.time_ns()}.json',result)
@@ -248,7 +272,15 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
                 legacy_button.click(submit_qa,[question,mode],[answer_html,record_json],api_name='ask',concurrency_limit=1,concurrency_id='query')
                 def chat(query, selected_mode, state):
                     from .agent import ask
+                    state = state or new_session()
                     def execute(q, selected, context, event):
+                        if selected == 'multi-agent':
+                            from .multi_agent import ask_multi
+                            turn = len(state['turns'])+1
+                            return ask_multi(q,model,query_config,index,pages,multi_config,multi_provider,
+                                Path(output)/'collaboration'/f'{state["conversation_id"]}-turn{turn}',retrieval,evidence_texts,
+                                conversation=context,on_event=event,query_lock=query_lock,
+                                record_metadata={'conversation_id':state['conversation_id'],'turn_index':turn})
                         return ask(q, selected, model, query_config, index, pages, agent_config, provider,
                                    retrieval, evidence_texts, conversation=context, on_event=event)
                     try:
@@ -274,7 +306,9 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
             if query_config.get('backend') == 'onnx':
                 gr.Markdown(f"查询后端：ONNX Runtime CPU · `{query_config['onnx_file']}`；池化、投影与归一化使用 FP32。")
             if provider:
-                gr.Markdown(f'问答模型：北京百炼 `{agent_config["model"]}`。每轮最多读取 6 页公开资料；新建会话不清空费用账本。')
+                gr.Markdown(f'问答模型：北京百炼 `{agent_config["model"]}`。原问答每轮最多读取 {agent_config["max_pages"]} 页公开资料；新建会话不清空费用账本。')
+                if multi_config:
+                    gr.Markdown(f'协作模式最多 {multi_config.get("max_parallel_workers",2)} 个检索Agent并行、{multi_config["max_requests"]} 次请求、{multi_config["max_pages"]} 页；仅检索编码串行。')
     try:
         app.launch(server_name='127.0.0.1', server_port=port, share=False, inbrowser=False,
                    theme=theme, css=CSS, favicon_path=str(LOGO_PATH))

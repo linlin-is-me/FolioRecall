@@ -14,13 +14,14 @@ def transient(reason):
 
 
 def pause_reason(reason):
-    return reason.startswith('api_') or reason in ('missing_usage','phase_budget_exhausted','invalid_answer_or_evidence')
+    return reason.startswith('api_') or reason in ('missing_usage','phase_budget_exhausted','invalid_answer_or_evidence',
+                                                  'unknown_inflight','retry_after_unresolved')
 
 
 def execution_code():
     root = Path(__file__).parent
     # Only relevant small implementation files, never models, pages or data scans.
-    names = ('agent.py','generation.py','qa_runtime.py','qa_translation.py','qa_storage.py',
+    names = ('agent.py','multi_agent.py','generation.py','qa_runtime.py','qa_translation.py','qa_storage.py',
              'qa_evaluation.py','query.py','retrieval.py','search.py','evaluation.py','text_baseline.py')
     return {name:digest((root/name).read_text(encoding='utf-8')) for name in names}
 
@@ -78,6 +79,8 @@ def prepare_unit(spec, repeats=1, task_ids=None, suite_id='standalone', conditio
                 key = dict(suite=suite_id, condition=name, domain=domain, task_id=task['task_id'], language=language, repeat=repeat)
                 jobs.append({'key':key, 'question':task['question_'+language], 'task':task,
                              'translation':cache.get(task['task_id']) if language == 'zh' else None})
+                if spec['mode'] == 'multi-agent':
+                    jobs[-1]['mode'] = 'multi-agent'
     files = [metadata(p) for p in sorted(Path(spec['index']).iterdir())
              if p.is_file() and p.name in ('index.faiss','pages.jsonl','config.json')]
     public = read_json(spec['public_corpus'])
@@ -176,8 +179,15 @@ def provider_factory(units):
         options = {'conversation': job['conversation']} if 'conversation' in job else {}
         if 'on_event' in job:
             options['on_event'] = job['on_event']
-        result = ask(job['question'],unit['spec']['mode'],model,unit['student'],index,pages,
-                     unit['agent'],provider,retrieval,unit['texts'],budget,job.get('translation'), **options)
+        if unit['spec']['mode'] == 'multi-agent':
+            from .multi_agent import ask_multi
+            graph_output = Path(job['graph_output'])
+            result = ask_multi(job['question'],model,unit['student'],index,pages,unit['agent'],provider,graph_output,
+                retrieval,unit['texts'],translation=job.get('translation'),resume=(graph_output/'manifest.json').exists(),
+                cooldown_seconds=None,**options)
+        else:
+            result = ask(job['question'],unit['spec']['mode'],model,unit['student'],index,pages,
+                         unit['agent'],provider,retrieval,unit['texts'],budget,job.get('translation'), **options)
         result['loading_seconds'] = loading
         return result
     return execute
@@ -196,6 +206,10 @@ def can_recover(result, job, config):
             or len(set(pages)) != len(pages)):
         raise ValueError('恢复时间或页面预算快照损坏')
     minimum_requests = 1 + int(bool(re.search(r'[\u3400-\u9fff]',job['question'])) and not budget.get('translation_debit'))
+    if result.get('mode') == 'multi-agent':
+        return (budget['requests_used'] < config['max_requests']
+                and budget['known_output_tokens']+budget['unknown_output_tokens_reserved'] < config['max_output_tokens']
+                and budget['active_seconds_used'] < config['task_timeout'])
     return (budget['requests_used']+minimum_requests <= config['max_requests']
             and budget['known_output_tokens']+budget['unknown_output_tokens_reserved'] < config['max_output_tokens']
             and budget['searches_used'] < config['max_searches']
@@ -251,6 +265,14 @@ def latest_service_wait(attempts):
     for attempt in reversed(attempts):
         result = attempt.get('result', {})
         calls = [c for c in result.get('api_calls', []) if c.get('cost_status') != 'not_sent']
+        if result.get('mode') == 'multi-agent' and calls:
+            # Parallel completion order must not hide the longest provider delay.
+            if any(c.get('retry_after_status') in ('unresolved','invalid') for c in calls):
+                return 0., 'retry_after_unresolved'
+            waits = [c.get('retry_after_seconds',0.) for c in calls]
+            if any(type(s) not in (int,float) or not math.isfinite(s) or s<0 for s in waits):
+                return 0., 'retry_after_unresolved'
+            return max(waits), None
         call = calls[-1] if calls else result.get('failure')
         if call and call.get('cost_status') == 'not_sent':
             continue
@@ -320,6 +342,11 @@ def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_af
                 else:
                     atomic_json(folder/'recovery.json',{'status':'recovery_skipped_budget_insufficient'})
             elif attempts[-1].get('state')=='running':
+                if job.get('mode') == 'multi-agent':
+                    from .multi_agent import can_resume_graph
+                    if can_resume_graph(folder/'graph'):
+                        pending.append((job,folder,attempts[-1]['attempt'],attempts[-1]))
+                        continue
                 atomic_json(folder/'recovery.json',{'status':'recovery_ineligible_incomplete_budget'})
         segment = output/'segments'/uuid.uuid4().hex
         provenance(segment,{'identity_digest':signature,'resume':resume,'stop_after':stop_after,'max_seconds':max_seconds})
@@ -329,7 +356,9 @@ def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_af
         last_finished = time.monotonic() if all_attempts else None
         previous_wall = all_attempts[-1].get('finished_at') if all_attempts else None
         service_wait, service_stop = latest_service_wait(all_attempts)
-        if any(a['state'] == 'running' for a in all_attempts):
+        resumable = {(digest(job['key']),first['attempt']) for job,_,_,first in pending
+                     if first and first['state']=='running' and job.get('mode')=='multi-agent'}
+        if any(a['state'] == 'running' and (digest(a['key']),a['attempt']) not in resumable for a in all_attempts):
             stopped, pending = 'incomplete_budget', []
         for job,folder,attempt,first in pending:
             if stop_after is not None and new >= stop_after:
@@ -347,15 +376,19 @@ def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_af
             service_wait = 0.
             if executor is None:
                 executor = factory()
-            record = {'key':job['key'],'task':job.get('task',{}),'attempt':attempt,'state':'running',
+            continuing = first is not None and first['state']=='running'
+            record = dict(first) if continuing else {'key':job['key'],'task':job.get('task',{}),'attempt':attempt,'state':'running',
                       'started_at':time.time(),'cooldown_seconds':waited}
             record.update(restart_gap(record,first))
             path = folder/f'attempt-{attempt:04d}.json'
-            if path.exists():
+            if path.exists() and not continuing:
                 raise ValueError('拒绝覆盖已有尝试')
             atomic_json(path,record)
             try:
-                result = executor(dict(job,execution_id=saved['execution_id']), first['result']['budget_state'] if first else None,attempt)
+                execution_job = dict(job,execution_id=saved['execution_id'])
+                if job.get('mode') == 'multi-agent':
+                    execution_job['graph_output'] = str(folder/'graph')
+                result = executor(execution_job, first['result']['budget_state'] if first and not continuing else None,attempt)
             except BaseException as exc:
                 # Keep running state: consumed task resources are unknown, never guess a resume budget.
                 record['process_error']=type(exc).__name__
@@ -368,6 +401,8 @@ def execute_plan(output, identity, jobs, factory, configs, resume=False, stop_af
             last_finished = time.monotonic()
             previous_wall = record['finished_at']
             atomic_json(path,record)
+            if continuing:
+                all_attempts = [a for a in all_attempts if not (a['key']==job['key'] and a['attempt']==attempt)]
             all_attempts.append(record)
             new += 1
             atomic_json(output/'state.json',{'last_key':job['key'],'last_attempt':attempt,'saved_attempts':len(all_attempts)})

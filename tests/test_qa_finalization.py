@@ -45,6 +45,7 @@ class FinalizationTests(unittest.TestCase):
         import httpx
         from foliorecall.generation import Bailian,CostLedger
         provider=object.__new__(Bailian)
+        provider.config=self.config
         provider.key='mock';provider.base='https://unused'
         provider.ledger=CostLedger(self.config['ledger'],150);provider.context={}
         payloads=[]

@@ -59,7 +59,7 @@ Fixed RAG reads the top six pages. Agent mode permits three searches, six distin
 
 Qwen and NanoVDR provide upstream models and weights. Sentence Transformers, FAISS, BM25 and Gradio provide reusable infrastructure. This project's contribution is integration, tool execution, application delivery and controlled comparisons; public-student speedups belong to the upstream model. [Sources](NOTICE) · [Interview material](doc/项目介绍与面试准备.md)
 
-The stack uses Python, PyTorch / Sentence Transformers, ONNX Runtime, FAISS / BM25, HTTPX, SQLite and Gradio. The Agent uses function calling and a project-owned Python tool loop; it currently does not use LangChain or LangGraph. [Stack and code entry points](doc/首版使用与评测.md#current-stack)
+The stack uses Python, PyTorch / Sentence Transformers, ONNX Runtime, FAISS / BM25, HTTPX, SQLite and Gradio. The original Agent uses function calling and a project-owned Python loop. Source code now includes an optional LangGraph coordinator, up to two concurrent retrieval agents and checkpoint recovery. Offline functional checks have passed; live quality/cost comparisons remain pending, and the existing candidate package does not include this mode. [Collaboration usage](doc/首版使用与评测.md#multi-agent-local) · [Stack and code entry points](doc/首版使用与评测.md#current-stack)
 
 ## Quick start
 

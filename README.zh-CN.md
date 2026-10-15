@@ -59,7 +59,7 @@ flowchart TD
 
 Qwen与NanoVDR提供上游模型和权重；Sentence Transformers、FAISS、BM25与Gradio提供现成基础设施。本项目贡献是集成、工具执行、应用交付和受控比较，公开学生的加速收益归于上游模型。[来源说明](NOTICE) · [面试材料](doc/项目介绍与面试准备.md)
 
-技术栈为Python、PyTorch／Sentence Transformers、ONNX Runtime、FAISS／BM25、HTTPX、SQLite和Gradio。Agent采用Function Calling与自实现Python工具循环；当前未使用LangChain或LangGraph。[技术栈与代码入口](doc/首版使用与评测.md#current-stack)
+技术栈为Python、PyTorch／Sentence Transformers、ONNX Runtime、FAISS／BM25、HTTPX、SQLite和Gradio。原单Agent采用Function Calling与自实现Python工具循环。源码新增可选LangGraph协作模式，支持协调器、最多两个并行检索Agent和检查点恢复；已完成离线功能验证，真实质量与费用对照待测，现有候选包尚未包含。[协作使用说明](doc/首版使用与评测.md#multi-agent-local) · [技术栈与代码入口](doc/首版使用与评测.md#current-stack)
 
 ## 快速体验
 

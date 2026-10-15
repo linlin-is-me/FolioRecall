@@ -80,6 +80,7 @@ class HttpDiagnosticsTests(unittest.TestCase):
     def test_error_whitelist_redaction_and_unknown_reservation(self):
         import httpx
         provider=object.__new__(Bailian)
+        provider.config=self.config
         provider.key='mock-secret';provider.base='https://unused';provider.context={}
         provider.ledger=CostLedger(self.config['ledger'],150)
         class Client:
