@@ -106,7 +106,7 @@ def qa_display(result, pages):
 
 
 def serve_demo(folder, teacher_config, query_config, port=7860, output=None, retrieval_config=None,
-               agent_config_path=None, public_corpus=None, multi_agent_config_path=None):
+               agent_config_path=None, public_corpus=None, multi_agent_config_path=None, _chat_executor=None):
     try:
         import gradio as gr
     except ImportError as exc:
@@ -274,6 +274,10 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
                     from .agent import ask
                     state = state or new_session()
                     def execute(q, selected, context, event):
+                        if _chat_executor is not None:
+                            return _chat_executor(q, selected, context, event, state,
+                                {'model':model,'index':index,'pages':pages,'retrieval':retrieval,
+                                 'texts':evidence_texts,'provider':multi_provider,'query_lock':query_lock})
                         if selected == 'multi-agent':
                             from .multi_agent import ask_multi
                             turn = len(state['turns'])+1

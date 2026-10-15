@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 
-from .io import write_json
+from .qa_storage import atomic_json as write_json
 from .demo_style import document_label
 
 

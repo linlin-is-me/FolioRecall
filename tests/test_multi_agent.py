@@ -65,6 +65,14 @@ class ScriptedProvider:
 
 
 class MultiAgentTests(unittest.TestCase):
+    def test_parent_task_key_survives_role_scoping(self):
+        provider = ScriptedProvider()
+        provider.context = {'task_id':'cov-01','execution_id':'paired-run','suite':'C'}
+        self.run_task(provider)
+        self.assertTrue(provider.inputs)
+        self.assertTrue(all(c['context']['task_id']=='cov-01' and c['context']['execution_id']=='paired-run'
+                            and c['context']['graph_task_id']=='task' for c in provider.inputs))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

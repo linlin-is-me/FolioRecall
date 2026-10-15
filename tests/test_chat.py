@@ -8,7 +8,7 @@ from unittest.mock import patch
 from foliorecall.agent import ask
 from foliorecall.chat import new_session, recent_context, progress_html, stream_chat
 from foliorecall.generation import TaskStopped
-from foliorecall.io import write_json
+from foliorecall.qa_storage import atomic_json as write_json
 from tests.test_agent import FakeProvider, message
 
 

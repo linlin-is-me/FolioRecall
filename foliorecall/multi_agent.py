@@ -204,7 +204,8 @@ class Collaboration:
             op = {'logical': logical, 'kind': 'request', 'role': role, 'phase': phase,'started_at':time.time(),
                   'attempt': self.attempt, 'sequence': sequence, 'max_tokens': limit}
             self.save_op(key, op)  # Persist intent before any external side effect.
-        context = {'task_id': self.root.name, 'agent_id': role, 'node': logical,
+        context = {'task_id': getattr(self.execution.provider, 'context', {}).get('task_id', self.root.name),
+                   'graph_task_id': self.root.name, 'agent_id': role, 'node': logical,
                    'request_sequence': sequence, 'phase': phase, 'attempt': self.attempt}
         provider = ScopedProvider(self.execution.provider, context)
         config = dict(self.config, max_requests=1, max_output_tokens=limit+(1024 if tools else 0))
