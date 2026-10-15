@@ -9,6 +9,39 @@ from foliorecall.demo import display_request, qa_display
 
 
 class DemoTests(unittest.TestCase):
+    def test_all_qa_examples_fill_only_question_and_keep_selected_mode(self):
+        import gradio as gr
+        from foliorecall.demo import serve_demo
+        repo = Path(__file__).resolve().parents[1]
+        apps = []
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            examples = [{'question': 'First', 'mode': 'agent'},
+                        {'question': 'Follow up', 'mode': 'rag', 'followup': True},
+                        {'question': 'New topic', 'mode': 'agent', 'new_conversation': True}]
+            (root/'qa-examples.json').write_text(json.dumps(examples))
+            pages = [{'page_id':f'p{i}', 'doc_id':'d', 'document_name':'doc.pdf', 'page_number':i}
+                     for i in (1,2)]
+            with patch('foliorecall.demo.load_search_session',return_value=(None,None,pages,None)), \
+                 patch('foliorecall.search.load_index',return_value=(None,pages)), \
+                 patch('foliorecall.agent.load_public_corpus',return_value={}), \
+                 patch('foliorecall.generation.Bailian') as provider, \
+                 patch('foliorecall.demo.process_memory',return_value={}), \
+                 patch.object(gr.Blocks,'launch',lambda app,**kwargs:apps.append(app)):
+                serve_demo(root,{}, {'model_id':'test','device':'cpu','dtype':'float32'},
+                    output=root/'records', agent_config_path=repo/'configs/agent-demo.json',
+                    multi_agent_config_path=repo/'configs/agent-research-demo.json',public_corpus='unused')
+                self.assertFalse(provider.return_value.complete.called)
+            config = apps[0].get_config_file()
+            question = next(c['id'] for c in config['components'] if c['type']=='textbox'
+                            and c['props'].get('label')=='英文或中文问题')
+            radio = next(c for c in config['components'] if c['type']=='radio')
+            self.assertEqual(radio['props']['value'],'multi-agent')
+            datasets = {c['id'] for c in config['components'] if c['type']=='dataset'}
+            events = [d for d in config['dependencies'] if any(t[0] in datasets for t in d['targets'])]
+            self.assertEqual(len(events),3)
+            self.assertTrue(all(d['outputs']==[question] for d in events))
+
     def test_research_verification_distinguishes_reworked_history(self):
         result = {'completed': True,
                   'answer': {'claims': [], 'insufficient_evidence': True, 'unresolved': []},

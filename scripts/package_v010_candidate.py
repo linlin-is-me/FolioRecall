@@ -6,6 +6,7 @@ downloads models nor exports graphs, encodes pages, or contacts a generation API
 import argparse
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,9 @@ def write(path, value):
 
 
 def documents(out):
+    if json.loads((out/'assembly.json').read_text()).get('workflow') == 'research':
+        research_documents(out)
+        return
     package = out / 'package'
     (package / 'branding').mkdir(exist_ok=True)
     shutil.copy2(ROOT / 'doc/assets/foliorecall-wordmark.png', package / 'branding/foliorecall-wordmark.png')
@@ -77,6 +81,108 @@ def documents(out):
     print('Local candidate:', package, flush=True)
 
 
+RESEARCH_CONFIGS = ('baseline.json', 'agent-demo.json', 'agent-multi-demo.json',
+    'agent-research-demo.json', 'student-ml-cpu.json', 'student-ml-cpu-default.json',
+    'student-ml-onnx-fp32.json', 'student-ml-onnx-int8.json')
+
+
+def research_documents(out):
+    """Refresh portable navigation and the manifest; preserve measured results."""
+    package = out/'package'
+    record = json.loads((out/'assembly.json').read_text())
+    (package/'RELEASE-NOTES.md').write_text('''# FolioRecall v0.1.0 文档研究候选
+
+本地审核候选，尚未推送或发布。规划协调、责任取证、分析和核验组成研究流程，
+按依赖调度，最多一次定向返工；单Agent继续用于快速问答。
+
+60次真实对照及助手评审、六次安装态浏览器确认保留原结果。
+研究模式整体覆盖未优于单Agent，评分保持human=not_checked。
+本次仅修正示例模式、导航、打包和说明，没有重新生成实验回答。
+
+## 启动与核对
+
+- [快速开始](QUICKSTART.md)：安装、免费检索、研究模式与快速问答。
+- [实测结果与限制](RESULTS.md)和[结果摘要](results-summary.json)。
+- [验证说明](VALIDATION.md)和[六次真实浏览器确认](browser-validation.json)。
+- [附件清单](ASSETS.md)与[变更摘要](CHANGE-SUMMARY.md)。
+- [源码包](foliorecall-0.1.0.tar.gz)：解压后查看README.md、README.zh-CN.md与doc/中的面试材料及完整实验说明。
+
+模型和42页示例单独提供。完整PDF、教师权重、凭据、原始运行和检查点不在附件内。
+截图中的JRC确认用例来自本机256页库，问答质量证据与便携42页示例分别记录。
+''',encoding='utf-8')
+    quick = (ROOT/'doc/v0.1.0快速开始.md').read_text(encoding='utf-8')
+    # This copy is also embedded in the demo zip, which may be extracted elsewhere.
+    quick = re.sub(r'\[([^\]]+)\]\(首版使用与评测\.md#[^)]+\)',
+                   r'\1（见附件RESULTS.md及源码包doc/首版使用与评测.md）',quick)
+    (package/'QUICKSTART.md').write_text(quick,encoding='utf-8')
+    bundle = package/'demo-bundle.zip'
+    temporary = out/'demo-bundle-refresh.zip'
+    replacements = {'demo-bundle/QUICKSTART.md':quick.encode('utf-8')}
+    replacements.update({'demo-bundle/configs/'+name:(ROOT/'configs'/name).read_bytes()
+                         for name in RESEARCH_CONFIGS})
+    with zipfile.ZipFile(bundle) as source, zipfile.ZipFile(temporary,'w',zipfile.ZIP_DEFLATED) as target:
+        for item in source.infolist():
+            if item.filename not in replacements:
+                target.writestr(item,source.read(item.filename))
+        for name,data in replacements.items():
+            target.writestr(name,data)
+    temporary.replace(bundle)
+    for name in RESEARCH_CONFIGS:
+        shutil.copy2(ROOT/'configs'/name,package/'configs'/name)
+    base = subprocess.check_output(['git','rev-parse','origin/main'],cwd=ROOT,text=True).strip()
+    changes = subprocess.check_output(['git','diff','--stat','origin/main','--'],cwd=ROOT,text=True)
+    (package/'CHANGE-SUMMARY.md').write_text(
+        f'# 候选来源\n\nwheel源码：`{record["source_commit"]}`；付费方法：`{record["paid_runtime_commit"]}`。\n\n'
+        f'源码包及文档：`{record.get("sdist_source_commit", record["source_commit"])}`。\n\n'
+        f'比较基点：本地缓存origin/main `{base}`，未刷新远端。\n\n'
+        '研究图与原始实验保持不变。本轮示例只填入问题、保留模式，更新便携导航与说明。\n\n'
+        '```text\n'+changes+'```\n',encoding='utf-8')
+    files = sorted(p for p in package.rglob('*') if p.is_file() and p.name!='ASSETS.md')
+    (package/'ASSETS.md').write_text(
+        '# 本地审核附件\n\n示例来源见demo-bundle.zip中的SOURCES.md，模型来源及许可随独立模型包提供。'
+        'research前缀为本轮真实界面，其他截图保留历史展示。\n\n'
+        '| 文件 | 字节 |\n|---|---:|\n'+''.join(
+            f'| [{p.relative_to(package).as_posix()}]({p.relative_to(package).as_posix()}) | {p.stat().st_size} |\n'
+            for p in files),encoding='utf-8')
+    archive = out/'foliorecall-0.1.0-research-review.zip'
+    with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED,compresslevel=1) as z:
+        for p in sorted(package.rglob('*')):
+            if p.is_file(): z.write(p,Path('package')/p.relative_to(package))
+    write(out/'assembly.json',dict(record,files=len(files)+1,archive_bytes=archive.stat().st_size,
+                                  archive=archive.name))
+    print('Local research candidate:',package,flush=True)
+
+
+def prepare_research(out, source):
+    """Reuse reviewed assets; build code and update the eight portable configs."""
+    if out.exists():
+        raise ValueError('目标已存在；保留旧候选，使用新的输出目录')
+    package = out/'package'
+    package.mkdir(parents=True)
+    (package/'configs').mkdir()
+    for name in ('demo-bundle.zip','query-onnx-fp32.zip','query-onnx-int8.zip',
+                 'results-summary.json','RESULTS.md','browser-validation.json','VALIDATION.md'):
+        shutil.copy2(source/name,package/name)
+    for name in ('screenshots','branding'):
+        shutil.copytree(source/name,package/name)
+    for name in ('LICENSE','NOTICE','.env.example'):
+        shutil.copy2(ROOT/name,package/name)
+    if (source/'final-install-validation.json').exists():
+        shutil.copy2(source/'final-install-validation.json',package/'previous-install-validation.json')
+    with (package/'VALIDATION.md').open('a',encoding='utf-8') as stream:
+        stream.write('\n本次修订的安装与示例检查见final-install-validation.json；'
+                     'previous-install-validation.json保留前一候选的安装记录。'
+                     '生成流程和实测结果不变，不重跑实验或调用付费服务。\n')
+    results = json.loads((package/'results-summary.json').read_text())
+    write(out/'assembly.json',{'version':'0.1.0','workflow':'research',
+        'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
+        'paid_runtime_commit':results['runtime_commit'],'asset_source':str(source),
+        'query_backend':'onnx-fp32','pages':42,'models_exported':False,
+        'pages_reencoded':False,'generation_api_calls':0,'historical_candidates_preserved':True})
+    subprocess.run([sys.executable,'-m','build','--no-isolation','--outdir',str(package)],cwd=ROOT,check=True)
+    research_documents(out)
+
+
 def prepare(out):
     if out.exists():
         raise ValueError('目标已存在；保留旧记录，改用新目录或只刷新文档')
@@ -117,6 +223,8 @@ def prepare(out):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=DEFAULT)
+    parser.add_argument('--research-source', type=Path,
+                        help='复用已评审研究候选的package目录，构建新的研究候选')
     parser.add_argument('--refresh-docs', action='store_true', help='Refresh docs and source archive after validation')
     args = parser.parse_args()
     out = args.output.resolve()
@@ -125,7 +233,13 @@ def main():
             raise ValueError('先完成候选构建')
         subprocess.run([sys.executable, '-m', 'build', '--sdist', '--no-isolation',
                         '--outdir', str(out / 'package')], cwd=ROOT, check=True)
+        record = json.loads((out/'assembly.json').read_text())
+        record['sdist_source_commit'] = subprocess.check_output(
+            ['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
+        write(out/'assembly.json',record)
         documents(out)
+    elif args.research_source:
+        prepare_research(out,args.research_source.resolve())
     else:
         prepare(out)
 

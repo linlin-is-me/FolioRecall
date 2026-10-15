@@ -255,18 +255,18 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
                         for item in read_json(example_file):
                             (followups if item.get('followup') else fresh if item.get('new_conversation') else starters).append(item)
                         if starters:
-                            gr.Examples([[item['question'], item['mode']] for item in starters[:3]],
-                                        inputs=[question, mode], label='从这里开始 · 点击填入，不自动提交')
+                            gr.Examples([[item['question']] for item in starters[:3]],
+                                        inputs=question, label='从这里开始 · 只填入问题，保留当前模式')
                         with gr.Accordion('追问与更多示例', open=False):
                             if starters[3:]:
-                                gr.Examples([[item['question'], item['mode']] for item in starters[3:]],
-                                            inputs=[question, mode], label='更多首问')
+                                gr.Examples([[item['question']] for item in starters[3:]],
+                                            inputs=question, label='更多首问 · 保留当前模式')
                             if followups:
-                                gr.Examples([[item['question'], item['mode']] for item in followups],
-                                            inputs=[question, mode], label='先完成相关首问，再使用追问')
+                                gr.Examples([[item['question']] for item in followups],
+                                            inputs=question, label='先完成相关首问，再使用追问 · 保留当前模式')
                             if fresh:
-                                gr.Examples([[item['question'], item['mode']] for item in fresh],
-                                            inputs=[question, mode], label='先点击新建会话，再尝试这些问题')
+                                gr.Examples([[item['question']] for item in fresh],
+                                            inputs=question, label='先点击新建会话，再尝试这些问题 · 保留当前模式')
                     else:
                         gr.Markdown('从当前文档中的一个主题开始，例如询问某项结论及其证据页，再追问适用条件或时间范围。', elem_classes=['fr-note'])
                     progress = gr.HTML(elem_id='progress-panel')

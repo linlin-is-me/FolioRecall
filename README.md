@@ -63,9 +63,13 @@ Research uses at most two concurrent remote calls and a shared limit of 16 reque
 
 Qwen and NanoVDR provide upstream models and weights. Sentence Transformers, FAISS, BM25 and Gradio provide reusable infrastructure. This project's contribution is integration, tool execution, application delivery and controlled comparisons; public-student speedups belong to the upstream model. [Sources](NOTICE) · [Interview material](doc/项目介绍与面试准备.md)
 
-The stack uses Python, PyTorch / Sentence Transformers, ONNX Runtime, FAISS / BM25, HTTPX, SQLite and Gradio. The original Agent uses function calling and a project-owned Python loop. Source code now includes an optional LangGraph coordinator, up to two concurrent retrieval agents and checkpoint recovery. The optional candidate has completed 54 live three-arm comparisons, eight serial/parallel diagnostics and six installed-browser confirmations. Single-Agent remains the default. [Collaboration usage](doc/首版使用与评测.md#multi-agent-local) · [Stack and code entry points](doc/首版使用与评测.md#current-stack)
+The stack uses Python, PyTorch / Sentence Transformers, ONNX Runtime, FAISS / BM25, HTTPX, SQLite, LangGraph and Gradio. The current research workflow has a planner, up to two responsibility-specific evidence agents, an analyst and a verifier, with dependencies, shared pages and one targeted rework. It completed 54 main comparisons and six ablations, totaling 60 live attempts. The earlier basic workflow and single-Agent loop remain available; results are reported under their own methods and budgets. [Research results](doc/首版使用与评测.md#multi-agent-research-results) · [Stack and code entry points](doc/首版使用与评测.md#current-stack)
+
+<details><summary>Earlier basic workflow: 54 main comparisons and eight concurrency diagnostics</summary>
 
 In the earlier basic-workflow comparison, 18 turns per arm had assistant-reviewed coverage of 0.640625 / 0.640625 / 0.625 for original single-Agent / larger-budget single-Agent / collaboration (16 applicable answers each). Costs were CNY 1.851970 / 2.657556 / 1.676076. Collaboration used more calls without improving overall coverage. Three two-worker diagnostic pairs showed overlapping client requests; this does not establish stable end-to-end speedup. All semantic scores remain `human=not_checked`. [Results and limitations](doc/首版使用与评测.md#multi-agent-live-results)
+
+</details>
 
 ## Quick start
 
@@ -108,7 +112,7 @@ CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall serve --index . \
   --public-corpus public-corpus.json --output "$RUN_DIR" --port 7867
 ```
 
-Open http://127.0.0.1:7867. With generation configured, the app opens on document QA. The research configuration above selects document research; switch to single-Agent for quick QA. Without generation, it opens on page search. The header lists the current collection. Click a starter example to fill the question and mode, then submit; examples never trigger generation automatically. Follow-up and new-conversation examples are labelled separately. Sources use short display names and physical page numbers; full filenames remain in tooltips, expanded page details and JSON. A new conversation clears context; JSON and terminal records are saved locally.
+Open http://127.0.0.1:7867. With generation configured, the app opens on document QA. The research configuration above selects document research; switch to single-Agent for quick QA. Without generation, it opens on page search. The header lists the current collection. Examples fill only the question and keep the selected answer mode. Starter and follow-up examples never trigger generation automatically. Follow-up and new-conversation examples are labelled separately. Sources use short display names and physical page numbers; full filenames remain in tooltips, expanded page details and JSON. A new conversation clears context; JSON and terminal records are saved locally.
 
 QA requires your own API key and service balance. CNY 20 is the example spending cap. Resetting a conversation does not reset costs. Use a new recording directory on restart. Generation uses `qwen3.7-plus-2026-05-26` with thinking disabled.
 
@@ -177,7 +181,7 @@ Same CPU, 200 fixed development queries / 1,000 pages, batch 1, four threads, th
 |---|---:|---:|---:|
 | PyTorch FP32 | 19.33 ms | 636.0 MiB | 0.972699 |
 | ONNX FP32 | 8.62 ms | 817.0 MiB | 0.972699 |
-| ONNX动态int8 | 4.79 ms | 581.1 MiB | 0.969008 |
+| ONNX dynamic int8 | 4.79 ms | 581.1 MiB | 0.969008 |
 
 ONNX FP32 matches PyTorch retrieval metrics on all five domains / 1,489 queries, with a 2.24x dev request speedup but higher RSS; it is the new local candidate CPU default. Int8 gives 4.04x speedup and a 72.2% smaller package, with a 0.005031 drop in equal-domain nDCG; it remains optional. Timings include pooling/projection/normalization and retrieval JSON, excluding loading, display and generation. They are not end-to-end Q&A speedups. Existing PyTorch quickstart remains compatible. [Domain results and export commands (Chinese)](doc/首版使用与评测.md#onnx-cpu-backends) · [Installed UI](doc/assets/onnx-fp32-retrieval.png)
 

@@ -61,9 +61,13 @@ flowchart TD
 
 Qwen与NanoVDR提供上游模型和权重；Sentence Transformers、FAISS、BM25与Gradio提供现成基础设施。本项目贡献是集成、工具执行、应用交付和受控比较，公开学生的加速收益归于上游模型。[来源说明](NOTICE) · [面试材料](doc/项目介绍与面试准备.md)
 
-技术栈为Python、PyTorch／Sentence Transformers、ONNX Runtime、FAISS／BM25、HTTPX、SQLite和Gradio。原单Agent采用Function Calling与自实现Python工具循环。源码新增可选LangGraph协作模式，支持协调器、最多两个并行检索Agent和检查点恢复；已完成54次真实三组对照、8次串行／并行诊断和六次安装态浏览器确认，以可选候选交付，默认保留单Agent。[协作使用说明](doc/首版使用与评测.md#multi-agent-local) · [技术栈与代码入口](doc/首版使用与评测.md#current-stack)
+技术栈为Python、PyTorch／Sentence Transformers、ONNX Runtime、FAISS／BM25、HTTPX、SQLite、LangGraph和Gradio。当前research流程包含规划协调、最多两位责任不同的取证Agent、分析与核验，支持依赖、共享原页及一次定向返工；已完成54次主对照和6次消融，共60次真实尝试。原basic协作与单Agent分别保留，质量结论按方法和预算区分。[研究实测](doc/首版使用与评测.md#multi-agent-research-results) · [技术栈与代码入口](doc/首版使用与评测.md#current-stack)
+
+<details><summary>历史basic协作对照：54次主对照与8次并发诊断</summary>
 
 此前basic轮次的三组各18轮助手评审中，覆盖均值A原单Agent／B扩预算／C协作为0.640625／0.640625／0.625，非空分母均16；费用为1.851970／2.657556／1.676076元。C增加调用数但未提高整体覆盖，三个双worker诊断出现真实请求重叠，不代表稳定的端到端加速。评分均为助手来源，`human=not_checked`。[完整结果与限制](doc/首版使用与评测.md#multi-agent-live-results)
+
+</details>
 
 ## 快速体验
 
@@ -106,7 +110,7 @@ CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall serve --index . \
   --public-corpus public-corpus.json --output "$RUN_DIR" --port 7867
 ```
 
-打开 http://127.0.0.1:7867。启用生成服务时默认进入文档问答；上述research配置选择文档研究，可切换单Agent快速问答。未配置生成服务则显示页面检索。顶部列出当前文档库；点击首问示例填入问题与模式，再提交，示例不会自动调用模型。追问示例与新会话问题单独标注。来源显示简称与物理页码，完整文件名保留在提示、原页详情及 JSON 中。新建会话清空上下文，JSON 与终态记录保存在本地。
+打开 http://127.0.0.1:7867。启用生成服务时默认进入文档问答；上述research配置选择文档研究，可切换单Agent快速问答。未配置生成服务则显示页面检索。顶部列出当前文档库；示例只填入问题，保留当前回答模式；首问和追问均不会自动调用模型。追问示例与新会话问题单独标注。来源显示简称与物理页码，完整文件名保留在提示、原页详情及 JSON 中。新建会话清空上下文，JSON 与终态记录保存在本地。
 
 问答需自行配置密钥及实际服务余额，示例 20 元为支出上限。切换会话不清空费用；重复启动使用新的记录目录。模型固定 `qwen3.7-plus-2026-05-26`，关闭思考。
 
