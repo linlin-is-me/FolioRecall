@@ -59,7 +59,9 @@ Fixed RAG reads the top six pages. Agent mode permits three searches, six distin
 
 Qwen and NanoVDR provide upstream models and weights. Sentence Transformers, FAISS, BM25 and Gradio provide reusable infrastructure. This project's contribution is integration, tool execution, application delivery and controlled comparisons; public-student speedups belong to the upstream model. [Sources](NOTICE) · [Interview material](doc/项目介绍与面试准备.md)
 
-The stack uses Python, PyTorch / Sentence Transformers, ONNX Runtime, FAISS / BM25, HTTPX, SQLite and Gradio. The original Agent uses function calling and a project-owned Python loop. Source code now includes an optional LangGraph coordinator, up to two concurrent retrieval agents and checkpoint recovery. Offline functional checks have passed; live quality/cost comparisons remain pending, and the existing candidate package does not include this mode. [Collaboration usage](doc/首版使用与评测.md#multi-agent-local) · [Stack and code entry points](doc/首版使用与评测.md#current-stack)
+The stack uses Python, PyTorch / Sentence Transformers, ONNX Runtime, FAISS / BM25, HTTPX, SQLite and Gradio. The original Agent uses function calling and a project-owned Python loop. Source code now includes an optional LangGraph coordinator, up to two concurrent retrieval agents and checkpoint recovery. The optional candidate has completed 54 live three-arm comparisons, eight serial/parallel diagnostics and six installed-browser confirmations. Single-Agent remains the default. [Collaboration usage](doc/首版使用与评测.md#multi-agent-local) · [Stack and code entry points](doc/首版使用与评测.md#current-stack)
+
+Across 18 turns per arm, assistant-reviewed coverage was 0.640625 / 0.640625 / 0.625 for original single-Agent / larger-budget single-Agent / collaboration (16 applicable answers each). Costs were CNY 1.851970 / 2.657556 / 1.676076. Collaboration used more calls without improving overall coverage. Three two-worker diagnostic pairs showed overlapping client requests; this does not establish stable end-to-end speedup. All semantic scores remain `human=not_checked`. [Results and limitations](doc/首版使用与评测.md#multi-agent-live-results)
 
 ## Quick start
 
