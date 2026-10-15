@@ -58,6 +58,40 @@ class OfflineProvider:
             'usage':{'prompt_tokens':0,'completion_tokens':0},'cost_cny':0.,'simulation':True}
 
 
+class OfflineResearchProvider(OfflineProvider):
+    def complete(self,messages,tools,max_tokens,timeout):
+        node = self.context['node']
+        if node=='research-query':
+            value = {'query':'Population and employment evidence pages and analysis periods'}
+        elif node=='research-plan':
+            value = {'requirements':[{'id':'r1','text':'Population evidence'},{'id':'r2','text':'Employment evidence'}],
+                'tasks':[{'id':'t1','name':'人口预测取证','question':'Find population evidence',
+                          'query':'working age population baseline migration projections','scope':'population',
+                          'requirement_ids':['r1'],'depends_on':[]},
+                         {'id':'t2','name':'就业观测取证','question':'Find employment evidence',
+                          'query':'employment EU recent employment growth','scope':'employment',
+                          'requirement_ids':['r2'],'depends_on':[]}]}
+        elif node.startswith('research-analysis-'):
+            allowed = json.loads(messages[0]['content'].split('allowed_evidence_page_ids=')[-1])
+            payload = json.loads(messages[1]['content'])
+            chinese = 'Write every claims[].text and unresolved[] explanation in Chinese' in messages[0]['content']
+            value = {'answer':{'claims':[] if 'Saturn' in payload['question'] else [{
+                'text':'模拟回答仅验证实际原页传递。' if chinese else 'Simulated answer validates actual page delivery only.',
+                'evidence_page_ids':allowed}], 'insufficient_evidence':True,
+                'unresolved':['模拟生成，不评价质量。' if chinese else 'Simulated generation; quality not assessed.']},
+                'coverage':[{'requirement_id':'r1','covered':False},{'requirement_id':'r2','covered':False}],
+                'calculations':[]}
+        elif node.startswith('research-verify-'):
+            payload = json.loads(messages[1]['content'])
+            value = {'claims':[{'id':c['id'],'supported':True,'reason':'Simulation only.'}
+                               for c in payload['draft']['numbered_claims']],'issues':[]}
+        else:
+            return super().complete(messages,tools,max_tokens,timeout)
+        self.calls.append(dict(self.context))
+        return {'message':{'content':json.dumps(value,ensure_ascii=False)},
+                'usage':{'prompt_tokens':0,'completion_tokens':0},'cost_cny':0.,'simulation':True}
+
+
 def ledger_snapshot(path):
     if not path:
         return None
@@ -66,7 +100,7 @@ def ledger_snapshot(path):
         return {'calls':count,'occupied_cny':occupied}
 
 
-def validate(bundle,query_config,output,ledger=None):
+def validate(bundle,query_config,output,ledger=None,workflow='basic'):
     import gradio as gr
     from foliorecall.demo import serve_demo, display_request
     root, bundle = Path(output).resolve(), Path(bundle).resolve()
@@ -82,6 +116,9 @@ def validate(bundle,query_config,output,ledger=None):
     loading = time.monotonic()-started
     texts = load_public_corpus(bundle/'public-corpus.json',pages)
     multi = read_json('configs/agent-multi-demo.json')
+    if workflow=='research':
+        multi.update(collaboration_workflow='research',max_requests=16,max_searches=6,max_pages=10,
+                     max_output_tokens=16000,task_timeout=300)
     multi['ledger'] = str(root/'simulated-costs.sqlite3')
     original = read_json('configs/agent-demo.json')
     original['ledger'] = multi['ledger']
@@ -89,7 +126,7 @@ def validate(bundle,query_config,output,ledger=None):
     write_json(root/'agent.json',original)
     providers, apps = [], []
     def provider_factory(config):
-        provider = OfflineProvider()
+        provider = OfflineResearchProvider() if workflow=='research' else OfflineProvider()
         providers.append(provider)
         return provider
     def launch(app,*args,**kwargs):
@@ -120,7 +157,7 @@ def validate(bundle,query_config,output,ledger=None):
             assert result['completed'], result
             assert result['context_turns'] == (1 if n==2 else 0)
             assert result['mode']=='multi-agent'
-            assert '检索Agent' in updates[-1][2]
+            assert ('核验Agent' if workflow=='research' else '检索Agent') in updates[-1][2]
             task = root/'browser'/'collaboration'/f'{state["conversation_id"]}-turn{len(state["turns"])}'
             saved = read_json(task/'result.json')
             assert saved['answer']==result['answer']
@@ -141,7 +178,7 @@ def validate(bundle,query_config,output,ledger=None):
     assert before == after, '共享费用账本在离线验证期间发生变化'
     result = {'status':'passed','source':'working tree; recorded before the implementation commit',
               'scope':'offline functional validation; real CPU ONNX retrieval, simulated generation, no quality/performance experiment',
-              'pages':len(pages),'model_loads':1,'model_loading_seconds':loading,'backend':query.get('backend'),
+              'workflow':workflow,'pages':len(pages),'model_loads':1,'model_loading_seconds':loading,'backend':query.get('backend'),
               'turns':turns,'free_retrieval':free,'gradio_callbacks':True,'actual_browser_clicks':False,
               'real_generation_requests':0,'real_generation_cost_cny':0,'ledger_before':before,'ledger_after':after,
               'dependencies':{name:importlib.metadata.version(name) for name in (
@@ -156,8 +193,9 @@ def main():
     parser.add_argument('--query-config',required=True)
     parser.add_argument('--output',required=True)
     parser.add_argument('--ledger',help='可选，只读核对已有共享账本')
+    parser.add_argument('--workflow',choices=('basic','research'),default='basic')
     args = parser.parse_args()
-    print(json.dumps(validate(args.bundle,args.query_config,args.output,args.ledger),ensure_ascii=False,indent=2))
+    print(json.dumps(validate(args.bundle,args.query_config,args.output,args.ledger,args.workflow),ensure_ascii=False,indent=2))
 
 
 if __name__ == '__main__':

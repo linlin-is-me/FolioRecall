@@ -46,7 +46,15 @@ def expand(tasks, confirmation, diagnostic=False):
     return jobs
 
 
-def prepare(root):
+def research_experiment(root):
+    path = Path(root)/'selection.json'
+    return path.exists() and read_json(path).get('experiment')=='research-v1'
+
+
+def prepare(root, experiment='v1'):
+    if experiment=='research-v1':
+        from scripts.multi_agent_research_experiment import prepare as prepare_research
+        return prepare_research(root)
     root = Path(root)
     if root.exists():
         raise ValueError('实验目录已存在，不覆盖')
@@ -79,6 +87,9 @@ def prepare(root):
 
 
 def load_plan(root, diagnostic=False):
+    if research_experiment(root):
+        from scripts.multi_agent_research_experiment import load_plan as load_research
+        return load_research(root)
     from foliorecall.agent import load_public_corpus
     from foliorecall.generation import read_agent_config
     from foliorecall.query import validate_query_config
@@ -168,6 +179,9 @@ def require_reviews(root, rows):
 
 
 def run(root, phase='development', resume=False, retry_one=False, stop_after=None, dry_run=False):
+    if research_experiment(root):
+        from scripts.multi_agent_research_experiment import run as run_research
+        return run_research(root,phase,resume,retry_one,stop_after,dry_run)
     root = Path(root)
     diagnostic = phase=='diagnostic'
     units,identity,jobs = load_plan(root,diagnostic)
@@ -232,8 +246,9 @@ def context_view(values):
 
 class BrowserExecutor:
     """The browser executes the next frozen C job; registration never generates answers."""
-    def __init__(self,root,units,identity,jobs):
+    def __init__(self,root,units,identity,jobs,browser_arm='C'):
         self.root,self.units,self.identity,self.jobs = Path(root),units,identity,jobs
+        self.browser_arm = browser_arm
 
     def __call__(self,question,mode,context,event,state,resources):
         from foliorecall.multi_agent import ask_multi
@@ -251,7 +266,7 @@ class BrowserExecutor:
                     raise ValueError('该浏览器轮次已经绑定其他问题，请新建会话')
                 return prior[-1]['result']
         queue = pending(self.jobs,rows,self.units)
-        if not queue or queue[0]['stage']!='confirmation' or queue[0]['arm']!='C':
+        if not queue or queue[0]['stage']!='confirmation' or queue[0]['arm']!=self.browser_arm:
             raise ValueError('下一项不是浏览器C组任务，请按冻结顺序运行命令行部分')
         job = queue[0]
         if question != job['question']:
@@ -276,7 +291,8 @@ class BrowserExecutor:
                 record_metadata={'conversation_id':state['conversation_id'],'turn_index':len(state['turns'])+1,
                                  'experiment_key':job['key'],'execution_id':current['execution_id']})
             result.update(context_sources=sources,context_missing=job['session']=='C1' and job['task']['language']=='zh' and not history,
-                          experiment_arm='C',experiment_stage='confirmation',browser_confirmed=True,loading_seconds=0.)
+                          experiment_arm=self.browser_arm,experiment_stage='confirmation',
+                          experiment_stratum=job.get('stratum','main'),browser_confirmed=True,loading_seconds=0.)
             captured.append(result)
             return result
         execute_plan(self.root/'main',self.identity,self.jobs,lambda:execute,[u['agent'] for u in self.units],
@@ -287,6 +303,9 @@ class BrowserExecutor:
 
 
 def serve(root,port):
+    if research_experiment(root):
+        from scripts.multi_agent_research_experiment import serve as serve_research
+        return serve_research(root,port)
     from foliorecall.demo import serve_demo
     root = Path(root)
     units,identity,jobs = load_plan(root)
@@ -325,6 +344,9 @@ def overlap(root,job):
 
 
 def report(root, final=False):
+    if research_experiment(root):
+        from scripts.multi_agent_research_experiment import report as report_research
+        return report_research(root,final)
     from scripts.analyze_qa_development import paired_candidates
     root = Path(root)
     plan = read_json(root/'plan.json')
@@ -383,6 +405,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command',choices=('prepare','run','serve','review','report','status'))
     parser.add_argument('--root',type=Path,default=ROOT)
+    parser.add_argument('--experiment',choices=('v1','research-v1'),default='v1',help='准备操作使用，其他操作读取selection.json')
     parser.add_argument('--phase',choices=('development','confirmation','diagnostic'),default='development')
     parser.add_argument('--resume',action='store_true')
     parser.add_argument('--retry-one',action='store_true')
@@ -397,7 +420,7 @@ def main():
         TOKENIZERS_PARALLELISM='false',HF_HOME='/mnt/d/foliorecall_cache/stage4_cpu/huggingface',
         OMP_NUM_THREADS='4',MKL_NUM_THREADS='4')
     if args.command=='prepare':
-        value = prepare(args.root)
+        value = prepare(args.root,args.experiment)
     elif args.command in ('run','status'):
         value = run(args.root,args.phase,args.resume,args.retry_one,args.stop_after,args.dry_run or args.command=='status')
     elif args.command=='serve':

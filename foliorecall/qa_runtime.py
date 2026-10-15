@@ -21,7 +21,7 @@ def pause_reason(reason):
 def execution_code():
     root = Path(__file__).parent
     # Only relevant small implementation files, never models, pages or data scans.
-    names = ('agent.py','multi_agent.py','generation.py','qa_runtime.py','qa_translation.py','qa_storage.py',
+    names = ('agent.py','multi_agent.py','multi_agent_research.py','generation.py','qa_runtime.py','qa_translation.py','qa_storage.py',
              'qa_evaluation.py','query.py','retrieval.py','search.py','evaluation.py','text_baseline.py')
     return {name:digest((root/name).read_text(encoding='utf-8')) for name in names}
 
@@ -207,8 +207,9 @@ def can_recover(result, job, config):
         raise ValueError('恢复时间或页面预算快照损坏')
     minimum_requests = 1 + int(bool(re.search(r'[\u3400-\u9fff]',job['question'])) and not budget.get('translation_debit'))
     if result.get('mode') == 'multi-agent':
-        return (budget['requests_used'] < config['max_requests']
-                and budget['known_output_tokens']+budget['unknown_output_tokens_reserved'] < config['max_output_tokens']
+        need = result.get('resume_requirements', {'requests':1,'output_tokens':1})
+        return (budget['requests_used']+need['requests'] <= config['max_requests']
+                and budget['known_output_tokens']+budget['unknown_output_tokens_reserved']+need['output_tokens'] <= config['max_output_tokens']
                 and budget['active_seconds_used'] < config['task_timeout'])
     return (budget['requests_used']+minimum_requests <= config['max_requests']
             and budget['known_output_tokens']+budget['unknown_output_tokens_reserved'] < config['max_output_tokens']

@@ -17,6 +17,9 @@ def metrics(reviews):
 
 def analyze(root, final=False):
     root = Path(root)
+    if (root/'selection.json').exists() and read_json(root/'selection.json').get('experiment')=='research-v1':
+        from scripts.multi_agent_research_experiment import report as research_report
+        return research_report(root,final)
     base = report(root,final)
     rows = attempts(root)
     first = [a for a in rows if a['state']=='finished' and a['attempt']==1]

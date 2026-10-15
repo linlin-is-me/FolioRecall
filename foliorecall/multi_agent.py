@@ -171,7 +171,7 @@ class Collaboration:
             tokens += value if type(value) is int else op.get('max_tokens',0)
         return len(requests), sum(op.get('tool') == 'search_pages' for op in ops), tokens
 
-    def request(self, logical, role, messages, tools=None, phase='main', max_tokens=2048):
+    def request(self, logical, role, messages, tools=None, phase='main', max_tokens=2048, reserve=None):
         with self.lock:
             cached = self._cached(logical)
             if cached is not None:
@@ -187,6 +187,8 @@ class Collaboration:
             budget = self.resources()
             reserve_requests = 0 if phase == 'final_answer' else 1 if phase == 'merge' else 2
             reserve_tokens = 1024*reserve_requests
+            if reserve is not None:
+                reserve_requests, reserve_tokens = reserve
             if budget['requests_used']+reserve_requests >= self.config['max_requests']:
                 raise TaskStopped('request_limit')
             limit = min(max_tokens, self.config['max_output_tokens']-budget['known_output_tokens']-
@@ -235,13 +237,15 @@ class Collaboration:
             raise TaskStopped(outcome['error'], outcome['record'])
         return outcome['message']
 
-    def allocate(self, roles, phase='main'):
+    def allocate(self, roles, phase='main', limits=None):
         budget = self.resources()
         reserve = 2 if phase == 'main' else 1
         remaining = [max(0, self.config['max_requests']-budget['requests_used']-reserve),
                      max(0, self.config['max_searches']-budget['searches_used']),
                      max(0, self.config['max_output_tokens']-budget['known_output_tokens']-
                          budget['unknown_output_tokens_reserved']-1024*reserve)]
+        if limits is not None:
+            remaining = [min(n, max(0, limit)) for n, limit in zip(remaining, limits)]
         quotas = {}
         for i, role in enumerate(roles):
             used = self.role_usage(role, phase)
@@ -250,7 +254,7 @@ class Collaboration:
         self.quotas = quotas
         atomic_json(self.root/f'quotas-{self.attempt}.json', quotas)
 
-    def tool(self, logical, role, name, params, phase):
+    def tool(self, logical, role, name, params, phase, limits=None):
         with self.lock:
             cached = self._cached(logical)
             if cached is not None:
@@ -269,6 +273,8 @@ class Collaboration:
             self.execution.deadline = self.execution.started + self.config['task_timeout']-self.active_before-self.translation.get('debit',{}).get('seconds',0)
             try:
                 if name == 'search_pages' and isinstance(params, dict) and set(params) == {'query'}:
+                    if limits and search_before >= limits['searches']:
+                        raise TaskStopped('search_limit')
                     _, used, _ = self.role_usage(role, phase)
                     if used >= self.quotas[role]['searches']:
                         raise TaskStopped('search_limit')
@@ -277,6 +283,8 @@ class Collaboration:
                         result = self.execution.search_pages(params['query'])
                 elif name == 'read_page' and isinstance(params, dict) and set(params) == {'page_id'}:
                     pid = params['page_id']
+                    if limits and pid not in self.execution.read and len(self.execution.read) >= limits['pages']:
+                        raise TaskStopped('page_limit')
                     if pid in self.execution.read:
                         result = self.execution.read[pid]
                         self.execution.trace.append({'tool':'read_page','arguments':params,'result':result,
@@ -316,6 +324,9 @@ class Collaboration:
         return output
 
     def graph(self, saver):
+        if self.config.get('collaboration_workflow') == 'research':
+            from .multi_agent_research import build_research_graph
+            return build_research_graph(self, saver)
         StateGraph, START, END, Send, _ = require_multiagent()
 
         def normalize(state):
@@ -520,6 +531,9 @@ class Collaboration:
             'graph':{'workers':{r:{k:v for k,v in w.items() if k not in ('messages','pending')} for r,w in state.get('workers',{}).items()},
                      'gap_used':state.get('gap_used',False),'attempt':self.attempt},
             'progress':self.events,'scope':'collaboration functional output; citation membership checked, semantic quality not automatically proven'}
+        if self.config.get('collaboration_workflow') == 'research':
+            from .multi_agent_research import research_result
+            research_result(self, result, state)
         return result
 
 

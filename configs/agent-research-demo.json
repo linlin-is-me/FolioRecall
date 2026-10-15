@@ -1,0 +1,21 @@
+{
+  "provider": "bailian",
+  "region": "cn-beijing",
+  "model": "qwen3.7-plus-2026-05-26",
+  "temperature": 0,
+  "enable_thinking": false,
+  "collaboration_workflow": "research",
+  "verification_rework": true,
+  "max_parallel_workers": 2,
+  "max_requests": 16,
+  "max_searches": 6,
+  "max_pages": 10,
+  "max_output_tokens": 16000,
+  "request_timeout": 60,
+  "task_timeout": 300,
+  "max_pixels": 1310720,
+  "phase_budget_cny": 20,
+  "ledger": "../outputs/api-costs.sqlite3",
+  "evidence_coverage_search": false,
+  "final_answer_evidence_check": false
+}

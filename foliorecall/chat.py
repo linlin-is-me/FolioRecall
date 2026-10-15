@@ -42,20 +42,32 @@ def progress_html(events):
     labels = {'queued': '等待执行', 'model_request': '模型请求', 'query_rewrite': '追问改写',
               'coordinate': '任务分工', 'evidence_merge': '证据汇合',
               'search_pages': '搜索页面', 'read_page': '读取页面', 'source_access_status': '来源读取状态',
-              'final_answer': '最终回答', 'terminal': '任务结束'}
+              'final_answer': '最终回答', 'terminal': '任务结束',
+              'research_analysis':'证据分析','research_verify':'原页核验','research_rework':'定向返工'}
     phases = {'query_translation': '中文转换', 'query_rewrite': '追问改写',
               'tool_decision': '选择工具', 'final_answer': '最终回答'}
     statuses = {'started': '执行中', 'completed': '完成', 'already_read': '本轮已读',
                 'error': '错误', 'failed': '未完成', 'limit': '达到限额'}
     rows = []
+    role_labels = {}
+    for item in events:
+        if item.get('tasks') and any(t.get('name') for t in item['tasks']):
+            role_labels.update({f'worker-{i+1}':t['name'] for i,t in enumerate(item['tasks']) if t.get('name')})
     for event in events:
         full_name = ''
         name = labels.get(event['event'], event['event'])
         if event.get('role'):
-            name = ('协调器' if event['role']=='coordinator' else event['role'].replace('worker-','检索Agent ')) + ' · ' + name
+            role_name = {**{'coordinator':'规划协调' if role_labels else '协调器',
+                           'analyst':'分析Agent','verifier':'核验Agent'},**role_labels}.get(
+                event['role'],event['role'].replace('worker-','检索Agent '))
+            name = role_name + ' · ' + name
         detail = phases.get(event.get('phase'), '')
         if event.get('query'):
             detail = event['query']
+        if event.get('tasks'):
+            detail = '；'.join(t.get('name') or t.get('question','') for t in event['tasks'])
+        if event.get('issues'):
+            detail = '；'.join(i['detail'] for i in event['issues'])
         if event.get('page_id'):
             full_name = event.get('document_name') or event['page_id']
             detail = f"{document_label(full_name)} · 物理第{event.get('page_number', '?')}页"

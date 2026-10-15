@@ -135,6 +135,10 @@ def request_reservation(model, max_tokens):
 
 
 def validate_agent_config(config):
+    if config.get('collaboration_workflow', 'basic') not in ('basic', 'research'):
+        raise ValueError('collaboration_workflow 必须为basic或research')
+    if type(config.get('verification_rework', True)) is not bool:
+        raise ValueError('verification_rework 必须为布尔值')
     if type(config.get('evidence_coverage_search', False)) is not bool:
         raise ValueError('evidence_coverage_search 必须为布尔值')
     if type(config.get('final_answer_evidence_check', False)) is not bool:
@@ -145,8 +149,8 @@ def validate_agent_config(config):
         raise ValueError('必须关闭思考并设置 temperature=0')
     if type(config.get('max_parallel_workers', 2)) is not int or config.get('max_parallel_workers', 2) not in (1, 2):
         raise ValueError('max_parallel_workers 必须为1或2')
-    bounds = {'max_searches': 4, 'max_pages': 8, 'max_requests': 12,
-              'max_output_tokens': 12000, 'request_timeout': 60, 'task_timeout': 240,
+    bounds = {'max_searches': 6, 'max_pages': 10, 'max_requests': 16,
+              'max_output_tokens': 16000, 'request_timeout': 60, 'task_timeout': 300,
               'max_pixels': 1310720}
     for key, maximum in bounds.items():
         if type(config.get(key)) is not int or not 1 <= config[key] <= maximum:

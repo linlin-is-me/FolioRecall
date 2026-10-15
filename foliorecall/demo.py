@@ -81,6 +81,19 @@ def qa_display(result, pages):
         chunks.append('</aside>')
     if not result.get('completed', True):
         chunks.append('<p class="fr-note">终止原因：'+escape(result.get('termination_reason', 'unknown'))+'</p>')
+    if 'research' in result:
+        research = result['research']
+        chunks.append('<details class="fr-evidence"><summary>任务分工与模型核验</summary>')
+        chunks.append('<p class="fr-note">核验属于模型判断，未经独立人工确认。</p><ul>')
+        for task in research.get('tasks',[]):
+            chunks.append('<li>'+escape(task['name'])+'：'+escape(task['question'])+'</li>')
+        chunks.append('</ul><p>核验状态：'+escape(research.get('verification_status','incomplete'))+'</p>')
+        for check in research.get('verifications',[]):
+            for issue in check['issues']:
+                chunks.append('<p>'+escape(issue['detail'])+'</p>')
+        if research.get('rework',{}).get('triggered'):
+            chunks.append('<p>已执行一次定向返工。</p>')
+        chunks.append('</details>')
     if result['evidence']:
         chunks.append('<div class="fr-evidence-list"><h3>本轮读取的原页</h3>')
     for evidence in result['evidence']:
@@ -213,9 +226,11 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
                     gr.Markdown('## 与文档对话\n提出问题，或接着上一轮继续追问。', elem_classes=['fr-section'])
                     choices = [('RAG · 直接回答','rag'), ('Agent · 工具补查','agent')]
                     if multi_config:
-                        choices.append(('多Agent · 协作检索','multi-agent'))
-                    mode = gr.Radio(choices, value='rag', label='回答方式')
-                    limits = gr.Markdown(f'每轮最多读取 {agent_config["max_pages"]} 页。', elem_classes=['fr-note'])
+                        choices.append(('多Agent · 文档研究' if multi_config.get('collaboration_workflow')=='research'
+                                        else '多Agent · 协作检索','multi-agent'))
+                    research_default = multi_config and multi_config.get('collaboration_workflow')=='research'
+                    mode = gr.Radio(choices, value='multi-agent' if research_default else 'rag', label='回答方式')
+                    limits = gr.Markdown(f'每轮最多读取 {(multi_config if research_default else agent_config)["max_pages"]} 页。', elem_classes=['fr-note'])
                     mode.change(lambda selected:f'每轮最多读取 {(multi_config if selected=="multi-agent" else agent_config)["max_pages"]} 页。',
                                 mode, limits, api_name=False)
                     session = gr.State(None)
