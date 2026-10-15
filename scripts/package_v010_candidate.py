@@ -98,6 +98,7 @@ def research_documents(out):
 60次真实对照及助手评审、六次安装态浏览器确认保留原结果。
 研究模式整体覆盖未优于单Agent，评分保持human=not_checked。
 本次仅修正示例模式、导航、打包和说明，没有重新生成实验回答。
+界面默认使用白色卡片、浅灰背景和绿色强调色；恢复浅色不改变问答方法。
 
 ## 启动与核对
 
@@ -110,6 +111,8 @@ def research_documents(out):
 模型和42页示例单独提供。完整PDF、教师权重、凭据、原始运行和检查点不在附件内。
 截图中的JRC确认用例来自本机256页库，问答质量证据与便携42页示例分别记录。
 ''',encoding='utf-8')
+    if (ROOT/'doc/assets/research-light-ui.png').exists():
+        shutil.copy2(ROOT/'doc/assets/research-light-ui.png', package/'screenshots/research-light-ui.png')
     quick = (ROOT/'doc/v0.1.0快速开始.md').read_text(encoding='utf-8')
     # This copy is also embedded in the demo zip, which may be extracted elsewhere.
     quick = re.sub(r'\[([^\]]+)\]\(首版使用与评测\.md#[^)]+\)',
