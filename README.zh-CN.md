@@ -2,24 +2,24 @@
 
 # FolioRecall · 页寻
 
-**检索文档证据、读取原页、执行补查并提供引用的文档Agent。**
+**用原页证据完成取证、分析、核验与定向返工的文档研究应用。**
 
 [English](README.md) · 简体中文
 
-FolioRecall结合视觉检索与BM25，处理含文字、表格和图表的文档。受限Agent决定何时继续搜索和读页，界面展示实际执行步骤，支持英文与中文追问。本地Gradio应用常驻CPU查询模型与索引。
+FolioRecall结合视觉检索与BM25，处理含文字、表格和图表的文档。LangGraph按责任和依赖组织取证，再分析原页、核验草稿，必要时返工一次；单Agent提供快速问答。界面展示实际步骤，支持英文与中文追问，CPU查询模型与索引常驻本地。
 
 > `0.1.0`最终本地候选已完成：多轮 Agent、ONNX FP32 推荐后端、界面与首次使用提示、项目Logo均已整合，等待审核。新版源码尚未推送，附件尚未发布。
 > [候选与审核入口](doc/v0.1.0发布说明.md) · [完整快速开始](doc/v0.1.0快速开始.md)
 
-复杂文档多Agent研究流程已完成源码和离线验证，包含明确的取证责任、分析、共享证据与核验返工；真实对照和新候选正在接续。[开发计划](doc/多模态文档检索项目开发计划.md#multi-agent-research-plan)记录当前进度。下方实测仍对应已交付的原版本。
+职责取证、分析、核验与一次返工已完成60次真实对照及消融、60份助手评审和六次安装态浏览器确认。研究模式作为可选工程示例交付，快速问答仍推荐单Agent；整体覆盖未改善。[真实结果与限制](doc/首版使用与评测.md#multi-agent-research-results)。
 
-## 一个真实文档任务
+## 一个真实研究任务
 
-询问两份欧洲报告如何描述劳动年龄人口与就业变化，再用中文追问证据页和分析时间范围。界面实时显示搜索、读页和模型请求，随后呈现事实声明、原页引用与保存的JSON。
+从报告图表提取电池技术与充电设施的支持计数，再计算占比。规划Agent分配分项提取与总数计算，后者等待前者；分析与核验均接收原页，答案引用物理第46页。另一真实用例在核验后补读城市政策正文；反例与失败同样保留。
 
-![真实Agent追问与执行步骤（排版调整前）](doc/assets/v010-agent-followup.png)
+![真实中文研究任务、比例计算与原页引用](doc/assets/research-chart-zh.jpg)
 
-当前界面将输入与会话、答案与证据分区，支持窄屏单列；原页按需展开。上图保留真实 API 回答，来自排版调整前的版本。[当前界面与验证](doc/首版使用与评测.md#v010-final-candidate)
+界面展示实际角色与工具步骤，折叠区保存首次核验、返工和末次核验记录。核验属于模型判断，不能视为独立人工确认。[工作流与实测](doc/首版使用与评测.md#multi-agent-research-results)
 
 <details><summary>实际请求进度与不足回答</summary>
 
@@ -34,26 +34,26 @@ FolioRecall结合视觉检索与BM25，处理含文字、表格和图表的文�
 
 ```mermaid
 flowchart TD
-    Q[当前问题与最近成功问答] --> C{是否为追问}
-    C -->|是| W[一次请求改写为独立英文检索问句]
-    C -->|否| T[按需转换中文问句]
-    W --> M[模型选择下一动作]
-    T --> M
-    M --> S[search_pages：视觉与BM25融合检索]
-    M --> P[read_page：页面图像与正文]
-    S --> F[工具结果与剩余资源]
-    P --> F
-    F --> M
-    M --> A[事实声明、本轮引用与缺失信息]
-    F -->|资源到限| A
-    A --> J[校验并保存JSON，展示原页]
+    Q[问题与最近成功上下文] --> P[规划协调：要求、责任和依赖]
+    P --> E1[取证A：第一组责任]
+    P --> E2[取证B：另一组责任，按依赖调度]
+    E1 --> S[共享原页与带范围的候选事实]
+    E2 --> S
+    S --> A[分析：比较、计算与答案草稿]
+    A --> V[核验：原页、声明、遗漏与条件]
+    V -->|需要返工，最多一次| R[原责任取证或分析修订]
+    R --> V2[末次核验]
+    V -->|无需返工| F[保留支持声明，未解决要求单列]
+    V2 --> F
+    F --> J[保存答案、引用、轨迹与费用]
 ```
 
-固定RAG读取检索前六页。Agent最多执行三次搜索、读取六个不同页面、发起八次模型请求，输出预算为8000 tokens，任务活动时间上限180秒。进度来自执行器实际回调，不展示模型隐藏思考。
+研究模式最多两路远程请求并发，共享16请求、6搜索、10页、16000输出tokens、300秒；仅有一次返工，不额外增加资源。单Agent保留原工具循环和默认配置。固定RAG读取检索前六页。Agent最多执行三次搜索、读取六个不同页面、发起八次模型请求，输出预算为8000 tokens，任务活动时间上限180秒。进度来自执行器实际回调，不展示模型隐藏思考。
 
 ## 核心实现与个人贡献
 
 - **检索装配：** 文档导入、分块恢复编码、FAISS索引、正文与页面绑定，以及视觉和BM25各Top-50的RRF融合，固定 `k=60`。
+- **研究协作：** 规划要求与不同责任、依赖调度、共享原页、分析计算、逐声明模型核验及一次返工；复用HTTPX和工具，LangGraph保存节点，统一费用与资源预占。
 - **工具与证据管理：** 搜索和读页反馈、资源限额、本轮引用权限、结构化答案，以及SQLite调用费用记录。
 - **多轮应用：** 最近三轮成功问答提供上下文；一次请求完成指代改写与中文转换，占用当前轮原有资源。历史答案不扩充引用权限。
 - **本地执行：** 工作线程和队列传递实时步骤，共用请求锁串行访问检索模型。浏览器断开不重发任务，后台仍保存终态。
@@ -63,7 +63,7 @@ Qwen与NanoVDR提供上游模型和权重；Sentence Transformers、FAISS、BM25
 
 技术栈为Python、PyTorch／Sentence Transformers、ONNX Runtime、FAISS／BM25、HTTPX、SQLite和Gradio。原单Agent采用Function Calling与自实现Python工具循环。源码新增可选LangGraph协作模式，支持协调器、最多两个并行检索Agent和检查点恢复；已完成54次真实三组对照、8次串行／并行诊断和六次安装态浏览器确认，以可选候选交付，默认保留单Agent。[协作使用说明](doc/首版使用与评测.md#multi-agent-local) · [技术栈与代码入口](doc/首版使用与评测.md#current-stack)
 
-三组各18轮的助手评审中，覆盖均值A原单Agent／B扩预算／C协作为0.640625／0.640625／0.625，非空分母均16；费用为1.851970／2.657556／1.676076元。C增加调用数但未提高整体覆盖，三个双worker诊断出现真实请求重叠，不代表稳定的端到端加速。评分均为助手来源，`human=not_checked`。[完整结果与限制](doc/首版使用与评测.md#multi-agent-live-results)
+此前basic轮次的三组各18轮助手评审中，覆盖均值A原单Agent／B扩预算／C协作为0.640625／0.640625／0.625，非空分母均16；费用为1.851970／2.657556／1.676076元。C增加调用数但未提高整体覆盖，三个双worker诊断出现真实请求重叠，不代表稳定的端到端加速。评分均为助手来源，`human=not_checked`。[完整结果与限制](doc/首版使用与评测.md#multi-agent-live-results)
 
 ## 快速体验
 
@@ -75,7 +75,7 @@ Qwen与NanoVDR提供上游模型和权重；Sentence Transformers、FAISS、BM25
 python3.10 -m venv .venv
 CPU_PY="$PWD/.venv/bin/python"
 "$CPU_PY" -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-"$CPU_PY" -m pip install 'foliorecall-0.1.0-py3-none-any.whl[onnx,demo,agent]'
+"$CPU_PY" -m pip install 'foliorecall-0.1.0-py3-none-any.whl[onnx,demo,agent,multiagent]'
 "$CPU_PY" -m zipfile -e demo-bundle.zip demo-local
 "$CPU_PY" -m zipfile -e query-onnx-fp32.zip demo-local
 cd demo-local/demo-bundle
@@ -102,16 +102,19 @@ RUN_DIR="../outputs/chat-$(date +%Y%m%d-%H%M%S)"
 CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall serve --index . \
   --config configs/baseline.json --query-config configs/student-ml-cpu-default.json \
   --retrieval-config hybrid.json --agent-config configs/agent-demo.json \
+  --multi-agent-config configs/agent-research-demo.json \
   --public-corpus public-corpus.json --output "$RUN_DIR" --port 7867
 ```
 
-打开 http://127.0.0.1:7867。启用生成服务时默认进入文档问答，否则显示页面检索。顶部列出当前文档库；点击首问示例填入问题与模式，再提交，示例不会自动调用模型。追问示例与新会话问题单独标注。来源显示简称与物理页码，完整文件名保留在提示、原页详情及 JSON 中。新建会话清空上下文，JSON 与终态记录保存在本地。
+打开 http://127.0.0.1:7867。启用生成服务时默认进入文档问答；上述research配置选择文档研究，可切换单Agent快速问答。未配置生成服务则显示页面检索。顶部列出当前文档库；点击首问示例填入问题与模式，再提交，示例不会自动调用模型。追问示例与新会话问题单独标注。来源显示简称与物理页码，完整文件名保留在提示、原页详情及 JSON 中。新建会话清空上下文，JSON 与终态记录保存在本地。
 
 问答需自行配置密钥及实际服务余额，示例 20 元为支出上限。切换会话不清空费用；重复启动使用新的记录目录。模型固定 `qwen3.7-plus-2026-05-26`，关闭思考。
 
 [完整快速开始](doc/v0.1.0快速开始.md)包含同版本旧 wheel 替换、int8 可选切换和 PyTorch 回退。旧配置省略后端字段时继续使用 PyTorch；产品 CLI、API 与答案结构兼容。完整 JRC 库、完整 PDF 和凭据不随候选提供，查询模型作为独立附件分发，不进入源码或 wheel。[使用说明](doc/首版使用与评测.md)另含源码安装与自有 PDF 建库入口。
 
 ## 质量、费用与误例
+
+同预算新轮主对照各18次：单Agent／basic／research覆盖为0.734375／0.578125／0.546875（各16个非空样本）；费用3.426176／2.527830／2.297742元，平均活动32.56／37.61／56.43秒。research有17/18有效核验答案，另1次结构失败；高非空事实分数不能抵消遗漏。60项含6条关闭返工消融，均为已见开发任务、助手评分，`human=not_checked`。不宣称整体协作优势。[完整分母、配对与误例](doc/首版使用与评测.md#multi-agent-research-results)
 
 **原单轮A5版本**完成40题、双语、三条件共240项首次终态与助手评审，237项结构合法。结构合法率不等于回答准确率；必需事实覆盖每条件有76项适用结果。
 

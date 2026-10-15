@@ -9,6 +9,20 @@ from foliorecall.demo import display_request, qa_display
 
 
 class DemoTests(unittest.TestCase):
+    def test_research_verification_distinguishes_reworked_history(self):
+        result = {'completed': True,
+                  'answer': {'claims': [], 'insufficient_evidence': True, 'unresolved': []},
+                  'evidence': [], 'timing': {'task_seconds': .1},
+                  'research': {'tasks': [], 'verification_status': 'passed',
+                    'verifications': [{'issues': [{'detail': '<missing policy>'}]}, {'issues': []}],
+                    'rework': {'triggered': True}}}
+        rendered = qa_display(result, [])
+        self.assertIn('首次核验（返工前）', rendered)
+        self.assertLess(rendered.index('&lt;missing policy&gt;'), rendered.index('末次核验'))
+        self.assertLess(rendered.index('末次核验'), rendered.index('未报告问题。'))
+        self.assertIn('&lt;missing policy&gt;', rendered)
+        self.assertIn('未经独立人工确认', rendered)
+
     def test_failed_empty_answer_and_missing_preview_remain_visible(self):
         result = {'completed': False, 'termination_reason': 'api_transport_error',
                   'answer': {'claims': [], 'insufficient_evidence': True, 'unresolved': []},

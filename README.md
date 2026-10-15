@@ -2,24 +2,24 @@
 
 # FolioRecall · 页寻
 
-**A document Agent that searches evidence, reads original pages and answers with citations.**
+**Document research with original-page evidence, distinct roles, verification and targeted rework.**
 
 English · [简体中文](README.zh-CN.md)
 
-FolioRecall combines visual retrieval and BM25 for documents containing text, tables and figures. Its bounded Agent decides when to search and read again, reports actual execution steps, and supports English and Chinese follow-ups. A local Gradio application keeps the CPU query model and index resident.
+FolioRecall combines visual retrieval and BM25 for documents containing text, tables and figures. LangGraph schedules responsibility-specific evidence tasks and dependencies, then analyzes pages, verifies a draft and optionally reworks once. A single-Agent path remains available for quick questions. The local UI reports actual steps, supports English and Chinese follow-ups, and keeps the CPU query model and index resident.
 
 > The local `0.1.0` final candidate is complete: multi-turn Agent features, the recommended ONNX FP32 backend, refreshed layout and onboarding, and the project logo. It awaits review; updated source has not been pushed and assets have not been published.
 > [Candidate review](doc/v0.1.0发布说明.md) · [Complete quick start](doc/v0.1.0快速开始.md)
 
-The research workflow is implemented and validated offline, with distinct evidence responsibilities, analysis, shared evidence and verification with targeted rework. Live comparison and a new candidate are next; the [development plan](doc/多模态文档检索项目开发计划.md#multi-agent-research-plan) records current progress. Measurements below still describe the previously delivered version.
+The research workflow now has 60 live comparison/ablation attempts, 60 assistant reviews and six installed-wheel browser confirmations. It is delivered as an optional engineering workflow; single-Agent remains the recommended fast path because overall coverage did not improve. [Results and limitations](doc/首版使用与评测.md#multi-agent-research-results).
 
-## A real document task
+## A real research task
 
-Ask how two European reports describe working-age population and employment, then ask in Chinese for evidence pages and time ranges. Searches, page reads and model requests appear as they happen, followed by claims, original-page citations and saved JSON.
+The planner separates energy-impact classification from urban-policy analysis, with an explicit dependency. Verification finds missing policy evidence; targeted rework reads the original policy pages and revises the answer. Other runs retain missed evidence, verifier errors and failures.
 
-![Actual Agent follow-up and execution steps before the layout refresh](doc/assets/v010-agent-followup.png)
+![Actual research answer with original-page citations](doc/assets/research-answer.jpg)
 
-The current UI separates inputs and conversation from answers and evidence, stacks them on narrow screens, and expands source pages on demand. The screenshot preserves an actual API response from the earlier layout. [Current UI and validation](doc/首版使用与评测.md#v010-final-candidate)
+The interface exposes role/tool events and separates initial verification, rework and final verification. Verification is a model judgement, not independent human confirmation. [Workflow and results](doc/首版使用与评测.md#multi-agent-research-results)
 
 <details><summary>Actual request progress and insufficient-evidence result</summary>
 
@@ -34,26 +34,28 @@ The current UI separates inputs and conversation from answers and evidence, stac
 
 ```mermaid
 flowchart TD
-    Q[Question and recent successful turns] --> C{Follow-up?}
-    C -->|Yes| W[One request rewrites an English retrieval query]
-    C -->|No| T[Translate Chinese query if needed]
-    W --> M[Model chooses next action]
-    T --> M
-    M --> S[search_pages: visual + BM25, RRF]
-    M --> P[read_page: page image and text]
-    S --> F[Tool result and remaining resources]
-    P --> F
-    F --> M
-    M --> A[Final claims, current-turn citations and unresolved facts]
-    F -->|Resource limit| A
-    A --> J[Validate and save JSON, display original pages]
+    Q[Question and successful context] --> P[Plan requirements, responsibilities and dependencies]
+    P --> E1[Evidence A: first responsibility]
+    P --> E2[Evidence B: another responsibility, dependency-aware]
+    E1 --> S[Shared original pages and scoped findings]
+    E2 --> S
+    S --> A[Analyze, compare and calculate draft]
+    A --> V[Verify claims and requirements against pages]
+    V -->|At most one rework| R[Targeted retrieval or analysis revision]
+    R --> V2[Final verification]
+    V -->|No rework| F[Keep supported claims, retain unresolved requirements]
+    V2 --> F
+    F --> J[Save answer, citations, trace and costs]
 ```
 
 Fixed RAG reads the top six pages. Agent mode permits three searches, six distinct pages, eight model requests, 8,000 output tokens and 180 seconds of task activity. Progress comes from actual executor callbacks; hidden reasoning is not displayed.
 
+Research uses at most two concurrent remote calls and a shared limit of 16 requests, 6 searches, 10 pages, 16,000 output tokens and 300 seconds, including one rework. Original single-Agent defaults remain unchanged.
+
 ## Implementation and contributions
 
 - **Retrieval integration:** page import, resumable encoding, FAISS indexing, page-text alignment and visual/BM25 Top-50 fusion with RRF `k=60`.
+- **Research collaboration:** distinct responsibilities and dependencies, shared original pages, analysis and arithmetic checks, claim verification and one rework; LangGraph checkpoints reuse the HTTPX client, tools and shared resource/cost reservations.
 - **Tools and evidence:** search/read feedback, resource limits, current-turn citation permissions, structured answers and SQLite usage accounting.
 - **Multi-turn application:** the latest three successful turns supply context. One request resolves references and translates Chinese follow-ups within the current turn's budget. Previous answers do not grant citation permission.
 - **Local execution:** a worker and queue expose progress; a shared lock serializes retrieval/model access. A disconnected browser does not resend an active request; the worker still saves its terminal result.
@@ -63,7 +65,7 @@ Qwen and NanoVDR provide upstream models and weights. Sentence Transformers, FAI
 
 The stack uses Python, PyTorch / Sentence Transformers, ONNX Runtime, FAISS / BM25, HTTPX, SQLite and Gradio. The original Agent uses function calling and a project-owned Python loop. Source code now includes an optional LangGraph coordinator, up to two concurrent retrieval agents and checkpoint recovery. The optional candidate has completed 54 live three-arm comparisons, eight serial/parallel diagnostics and six installed-browser confirmations. Single-Agent remains the default. [Collaboration usage](doc/首版使用与评测.md#multi-agent-local) · [Stack and code entry points](doc/首版使用与评测.md#current-stack)
 
-Across 18 turns per arm, assistant-reviewed coverage was 0.640625 / 0.640625 / 0.625 for original single-Agent / larger-budget single-Agent / collaboration (16 applicable answers each). Costs were CNY 1.851970 / 2.657556 / 1.676076. Collaboration used more calls without improving overall coverage. Three two-worker diagnostic pairs showed overlapping client requests; this does not establish stable end-to-end speedup. All semantic scores remain `human=not_checked`. [Results and limitations](doc/首版使用与评测.md#multi-agent-live-results)
+In the earlier basic-workflow comparison, 18 turns per arm had assistant-reviewed coverage of 0.640625 / 0.640625 / 0.625 for original single-Agent / larger-budget single-Agent / collaboration (16 applicable answers each). Costs were CNY 1.851970 / 2.657556 / 1.676076. Collaboration used more calls without improving overall coverage. Three two-worker diagnostic pairs showed overlapping client requests; this does not establish stable end-to-end speedup. All semantic scores remain `human=not_checked`. [Results and limitations](doc/首版使用与评测.md#multi-agent-live-results)
 
 ## Quick start
 
@@ -75,7 +77,7 @@ From the asset directory (an existing compatible dependency environment can be r
 python3.10 -m venv .venv
 CPU_PY="$PWD/.venv/bin/python"
 "$CPU_PY" -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-"$CPU_PY" -m pip install 'foliorecall-0.1.0-py3-none-any.whl[onnx,demo,agent]'
+"$CPU_PY" -m pip install 'foliorecall-0.1.0-py3-none-any.whl[onnx,demo,agent,multiagent]'
 "$CPU_PY" -m zipfile -e demo-bundle.zip demo-local
 "$CPU_PY" -m zipfile -e query-onnx-fp32.zip demo-local
 cd demo-local/demo-bundle
@@ -102,16 +104,19 @@ RUN_DIR="../outputs/chat-$(date +%Y%m%d-%H%M%S)"
 CUDA_VISIBLE_DEVICES= "$CPU_PY" -m foliorecall serve --index . \
   --config configs/baseline.json --query-config configs/student-ml-cpu-default.json \
   --retrieval-config hybrid.json --agent-config configs/agent-demo.json \
+  --multi-agent-config configs/agent-research-demo.json \
   --public-corpus public-corpus.json --output "$RUN_DIR" --port 7867
 ```
 
-Open http://127.0.0.1:7867. With generation configured, the app opens on document QA; otherwise it opens on page search. The header lists the current collection. Click a starter example to fill the question and mode, then submit; examples never trigger generation automatically. Follow-up and new-conversation examples are labelled separately. Sources use short display names and physical page numbers; full filenames remain in tooltips, expanded page details and JSON. A new conversation clears context; JSON and terminal records are saved locally.
+Open http://127.0.0.1:7867. With generation configured, the app opens on document QA. The research configuration above selects document research; switch to single-Agent for quick QA. Without generation, it opens on page search. The header lists the current collection. Click a starter example to fill the question and mode, then submit; examples never trigger generation automatically. Follow-up and new-conversation examples are labelled separately. Sources use short display names and physical page numbers; full filenames remain in tooltips, expanded page details and JSON. A new conversation clears context; JSON and terminal records are saved locally.
 
 QA requires your own API key and service balance. CNY 20 is the example spending cap. Resetting a conversation does not reset costs. Use a new recording directory on restart. Generation uses `qwen3.7-plus-2026-05-26` with thinking disabled.
 
 The [complete quick start](doc/v0.1.0快速开始.md) covers replacing an older wheel of the same version, optional int8 and the PyTorch fallback. Old configurations without a backend field keep using PyTorch. Product CLI, API and answer shape remain compatible. Full JRC data, full PDFs and credentials are excluded; query models are separate assets, outside the source and wheel. [Full usage](doc/首版使用与评测.md) covers source installation and own-PDF indexing.
 
 ## Quality, cost and errors
+
+New equal-budget comparison, 18 attempts per main arm: single-Agent / basic / research coverage is 0.734375 / 0.578125 / 0.546875 (16 non-null samples each); costs are CNY 3.426176 / 2.527830 / 2.297742 and mean activity is 32.56 / 37.61 / 56.43 seconds. Research has 17/18 valid verified answers plus one format failure. Its high non-empty factual score does not offset omissions. All 60 attempts, including six no-rework ablations, use seen development tasks and assistant reviews, `human=not_checked`. [Denominators, paired results and failures](doc/首版使用与评测.md#multi-agent-research-results)
 
 The **earlier single-turn A5 version** completed 40 questions × two languages × three conditions: 240 terminal first attempts, all assistant-reviewed, 237 structurally valid. Structural validity is not answer accuracy. Required-fact coverage uses 76 applicable answers per condition.
 

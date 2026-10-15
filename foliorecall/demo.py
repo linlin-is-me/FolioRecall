@@ -88,9 +88,14 @@ def qa_display(result, pages):
         for task in research.get('tasks',[]):
             chunks.append('<li>'+escape(task['name'])+'：'+escape(task['question'])+'</li>')
         chunks.append('</ul><p>核验状态：'+escape(research.get('verification_status','incomplete'))+'</p>')
-        for check in research.get('verifications',[]):
+        checks = research.get('verifications',[])
+        for i,check in enumerate(checks):
+            label = ('首次核验（返工前）' if i == 0 else '末次核验') if len(checks)>1 else '首次核验'
+            chunks.append('<h4>'+label+'</h4>')
             for issue in check['issues']:
                 chunks.append('<p>'+escape(issue['detail'])+'</p>')
+            if not check['issues']:
+                chunks.append('<p>未报告问题。</p>')
         if research.get('rework',{}).get('triggered'):
             chunks.append('<p>已执行一次定向返工。</p>')
         chunks.append('</details>')
