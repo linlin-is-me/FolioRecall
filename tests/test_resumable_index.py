@@ -72,6 +72,22 @@ class ResumableIndexTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '不可覆盖'):
             build_index(self.config, self.pages, out, resume=True)
 
+    def test_holdout_wrapper_continues_saved_blocks_without_reencoding(self):
+        from foliorecall.io import write_json
+        from scripts.run_teacher_holdout import commands
+        write_json(self.root / 'manifest.json', {
+            'models': [{'id': 'original', 'method': 'original', 'encoding_config': 'fixture'}],
+            'suite': {'tasks': [{'name': 'a'}]}, 'data': str(self.root)})
+        out = self.root / 'indexes/original/a'
+        first = build_index(self.config, self.pages, out, chunk_size=2, stop_after_chunks=1)
+        self.assertFalse(first['complete'])
+        self.assertIn('--resume', commands(self.root, 'index', 'original', 'a')[0])
+        result = build_index(self.config, self.pages, out, resume=True, chunk_size=2)
+        self.assertTrue(result['complete'])
+        self.assertEqual(self.encoded, ['0', '1', '2'])
+        self.assertEqual(commands(self.root, 'index', 'original', 'a'), [])
+        self.assertEqual(load_index(out, self.config)[0].ntotal, 3)
+
     def test_changed_input_and_row_order_fail_before_model_load(self):
         self.pause = True
         out = self.root / 'partial'

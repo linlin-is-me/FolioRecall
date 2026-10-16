@@ -149,9 +149,13 @@ def commands(root, stage, model=None, task=None, resume=None):
                 data = Path(m['data']) / t['name']
                 index = root / 'indexes' / r['id'] / t['name']
                 if stage == 'index':
+                    if index.exists():
+                        if not read_json(index / 'build.json')['complete']:
+                            raise ValueError(f'索引目录存在但未完成: {index}')
+                        continue
                     cmd = prefix + ['index', '--config', r['encoding_config'], '--pages', str(data / 'pages.jsonl'),
                         '--output', str(index), '--chunk-size', '64', '--max-seconds', '3600']
-                    if index.exists():
+                    if (index.with_name(index.name + '.work') / 'manifest.json').is_file():
                         cmd += ['--resume']
                 elif stage == 'evaluate':
                     cmd = prefix + ['evaluate', '--config', r['encoding_config'], '--index', str(index),

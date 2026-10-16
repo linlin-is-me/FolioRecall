@@ -185,6 +185,17 @@ class HoldoutEntryTests(unittest.TestCase):
             self.prepared()
         self.assertEqual((self.root/'manifest.json').read_bytes(), original)
 
+    def test_index_commands_resume_work_directory_and_preserve_completed_index(self):
+        self.prepared()
+        out = self.root/'indexes/original/a'
+        self.assertNotIn('--resume', commands(self.root, 'index', 'original', 'a')[0])
+        write_json(out.with_name('a.work')/'manifest.json', {'fixture': True})
+        self.assertIn('--resume', commands(self.root, 'index', 'original', 'a')[0])
+        write_json(out/'build.json', {'complete': True})
+        before = (out/'build.json').read_bytes()
+        self.assertEqual(commands(self.root, 'index', 'original', 'a'), [])
+        self.assertEqual((out/'build.json').read_bytes(), before)
+
     def test_only_explicit_run_dispatches_selected_cli_command(self):
         self.prepared()
         write_json(self.root/'data-preparation.json', {'tasks':[{'normalized_query_overlap':{'train':[]}}]})
