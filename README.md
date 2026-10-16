@@ -189,6 +189,8 @@ ONNX FP32 matches PyTorch retrieval metrics on all five domains / 1,489 queries,
 
 A separate **LLaVE teacher-training comparison** reused the same 256 training queries and 64 batches: dev nDCG@10 was 0.978928 versus 0.977083 for ordinary CachedMNRL (+0.001845), with Recall unchanged at 0.995. Only two of 200 queries improved and one regressed. The small, concentrated gain did not justify teacher/student and index migration; this experiment remains unintegrated. [Results and limitations (Chinese)](doc/首版使用与评测.md#llave-training)
 
+**New 270-query holdout and three-seed validation:** Six fresh 64-step training arms, 21 matched indexes/evaluations, and assistant inspection of 19 cases / 44 original pages are complete. Equal-domain nDCG@10: original teacher 0.612402; ordinary LoRA 0.650042±0.007900; LLaVE 0.649618±0.008002 (sample SD). Ordinary training improves all nine seed/domain combinations. LLaVE provides no stable additional gain and regresses against ordinary LoRA on economics for all three seeds. Product teacher/student defaults are unchanged; these teacher gains have not been transferred to Agent answers. [Full results, regressions and data boundaries](doc/首版使用与评测.md#teacher-holdout-results)
+
 The six-arm depth study includes physical four-layer pruning, independent training, and joint four/six-layer exits. The joint four-layer package removes 20.7% of parameters but scores 0.495222 nDCG@10 versus 0.972699 for the public six-layer student, so the existing six-layer ONNX deployment stays in place. [Controlled results and limitations](doc/首版使用与评测.md#multidepth-query).
 
 ## Scope and limitations
@@ -196,7 +198,7 @@ The six-arm depth study includes physical four-layer pruning, independent traini
 - English corpus; Chinese questions and follow-ups retrieve English pages. Native Chinese-document retrieval is unverified.
 - Local single-user application with remote generation. Browser-state conversations clear on refresh; there is no persistent conversation database or multi-user deployment.
 - Answers may misread figures, omit facts or cite insufficient evidence. History resolves references and is not verified factual evidence.
-- Fixed tasks, one training seed and assistant scoring limit generalization claims; upstream training overlap is not fully established.
+- Fixed Q&A tasks and assistant scoring limit generalization claims. Earlier training studies mostly used one seed; the new teacher comparison uses three, with document-level isolation and upstream training overlap still unverified.
 - Retrieval incurs no generation charges; Q&A requires a key and service balance. Reranking and unrestricted external tools are not implemented.
 
 ## Documentation and license
