@@ -191,6 +191,8 @@ A separate **LLaVE teacher-training comparison** reused the same 256 training qu
 
 **New 270-query holdout and three-seed validation:** Six fresh 64-step training arms, 21 matched indexes/evaluations, and assistant inspection of 19 cases / 44 original pages are complete. Equal-domain nDCG@10: original teacher 0.612402; ordinary LoRA 0.650042±0.007900; LLaVE 0.649618±0.008002 (sample SD). Ordinary training improves all nine seed/domain combinations. LLaVE provides no stable additional gain and regresses against ordinary LoRA on economics for all three seeds. Product teacher/student defaults are unchanged; these teacher gains have not been transferred to Agent answers. [Full results, regressions and data boundaries](doc/首版使用与评测.md#teacher-holdout-results)
 
+**CPU student transfer:** A fresh student distilled from the ordinary-LoRA teacher reaches 0.637859 equal-domain nDCG on three retrospective domains, versus 0.566638 for original-teacher distillation and 0.669182 for the public student. Development improves, but cross-domain results fail the predeclared migration criteria. After assistant inspection of 17 cases / 40 pages, product migration stops and the public six-layer ONNX FP32 deployment remains. [Comparison and regressions](doc/首版使用与评测.md#teacher-transfer)
+
 The six-arm depth study includes physical four-layer pruning, independent training, and joint four/six-layer exits. The joint four-layer package removes 20.7% of parameters but scores 0.495222 nDCG@10 versus 0.972699 for the public six-layer student, so the existing six-layer ONNX deployment stays in place. [Controlled results and limitations](doc/首版使用与评测.md#multidepth-query).
 
 ## Scope and limitations
