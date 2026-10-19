@@ -105,8 +105,8 @@ def research_documents(out):
     for name in ('SHOWCASE-VALIDATION.md', 'showcase-validation.json'):
         if (out/name).exists():
             shutil.copy2(out/name, package/name)
-    if (ROOT/'doc/assets/agent-showcase-research.png').exists():
-        shutil.copy2(ROOT/'doc/assets/agent-showcase-research.png', package/'screenshots/agent-showcase-research.png')
+    if (ROOT/'doc/assets/agent-showcase-research.jpg').exists():
+        shutil.copy2(ROOT/'doc/assets/agent-showcase-research.jpg', package/'screenshots/agent-showcase-research.jpg')
     showcase_intro = ('''本次新增实时协作状态、任务责任与依赖、原页归属和版本化核验展示。
 四份离线案例复用历史真实记录，在当前浅色界面重新呈现，不重新生成答案。
 本轮模拟生成器的浏览器验证仅检查界面与装配，不作为新的真实模型质量或性能结果。
@@ -187,7 +187,7 @@ JRC案例来自本机256页库；离线案例仅附精选页面，不提供完�
         'RESULTS.md、results-summary.json与browser-validation.json保留历史真实实验。'
         'VALIDATION.md为继承的历史验证记录，不表示当前组合再次执行了付费问答。\n\n'+
         ('[离线协作案例](showcase/index.html)使用历史真实记录，来源见[案例说明](showcase/SOURCES.md)。'
-         'agent-showcase-research.png为这些记录在当前浅色界面的实际截图；'
+         'agent-showcase-research.jpg为这些记录在当前浅色界面的实际截图；'
          '其余研究截图保留历史展示。本轮模拟界面与安装检查见SHOWCASE-VALIDATION.md及'
          'showcase-validation.json（有实际记录时提供），不作为新质量结果。\n\n'
          if has_showcase else '')+

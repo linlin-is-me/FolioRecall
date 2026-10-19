@@ -19,7 +19,7 @@ The research workflow has 60 live comparison/ablation attempts, 60 assistant rev
 
 When comparing population and employment reports, the planner assigns distinct evidence responsibilities. Two evidence agents search and read pages; the analyst and verifier receive actual pages, and final claims reference their evidence. The screenshot renders a saved historical live call in the current light interface. It is not a new call or a new quality evaluation.
 
-![Population and employment research: responsibilities, collaboration state and page evidence](doc/assets/agent-showcase-research.png)
+![Population and employment research: responsibilities, collaboration state and page evidence](doc/assets/agent-showcase-research.jpg)
 
 Four static cases open without an API key, model or index, with source pages, tasks, drafts and verification records. They use existing experiments; no answer was regenerated for presentation.
 

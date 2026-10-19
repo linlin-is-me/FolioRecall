@@ -33,6 +33,8 @@ class ResearchDisplayTests(unittest.TestCase):
         self.assertNotIn('<report>',value)
         self.assertIn('qa-page-d%3A1',value)
         self.assertIn('收到原页的取证角色',value)
+        self.assertIn('分析收到（版本）',value)
+        self.assertNotIn('草稿采用',value)
         self.assertIn('取数、计算',value)
         self.assertLess(value.index('v1-c1'),value.index('new support'))
         self.assertLess(value.index('old rejected'),value.index('v1-c1'))

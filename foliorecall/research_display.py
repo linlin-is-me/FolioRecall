@@ -179,8 +179,8 @@ def research_html(result=None, events=None, page_prefix='qa-page-'):
     if pages:
         cited = {pid for c in (result or {}).get('answer', {}).get('claims', []) for pid in c.get('evidence_page_ids', [])}
         chunks.append('<details class="fr-research-details"><summary>证据交接 · '+str(len(pages))+'张原页</summary>'
-                      '<p class="fr-research-note">取证角色接收与草稿采用分别记录，读到页面不等于事实已经得到支持。</p>'
-                      '<div class="fr-table-wrap"><table><thead><tr><th>原页</th><th>收到原页的取证角色</th><th>草稿采用</th><th>最终引用</th></tr></thead><tbody>')
+                      '<p class="fr-research-note">分别记录取证和分析收到的页面；收到页面不等于答案已引用或事实得到支持。</p>'
+                      '<div class="fr-table-wrap"><table><thead><tr><th>原页</th><th>收到原页的取证角色</th><th>分析收到（版本）</th><th>最终引用</th></tr></thead><tbody>')
         for page in pages:
             receivers = '、'.join(roles.get(r, r) for r in page.get('received_by', [])) or '未记录'
             versions = '、'.join('v'+str(v) for v in page.get('analysis_versions', [])) or '未记录'
@@ -199,7 +199,7 @@ def research_html(result=None, events=None, page_prefix='qa-page-'):
                 added = set(drafts_by_version[-1].get('page_ids', [])) - set(drafts_by_version[0].get('page_ids', []))
                 added_links = [_page_link(p, page_prefix) for p in pages if p['page_id'] in added]
                 if added_links:
-                    chunks.append('<p class="fr-research-note">修订草稿新增采用：' + '、'.join(added_links) + '</p>')
+                    chunks.append('<p class="fr-research-note">修订分析新增收到：' + '、'.join(added_links) + '</p>')
         checks, drafts = research.get('verifications', []), research.get('drafts', [])
         chunks.append('<details class="fr-research-details"><summary>草稿与模型核验'
                       f' · {len(drafts)}版草稿 / {len(checks)}次完成核验</summary>'
