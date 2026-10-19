@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1040" viewBox="0 0 1000 1040" role="img" aria-labelledby="title desc">
+<title id="title">Agent workflow</title>
+<desc id="desc">Plan, gather evidence, analyze and verify, with at most one targeted rework before saving.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#52796b"/></marker></defs>
+<rect width="1000" height="1040" rx="20" fill="#ffffff"/>
+<g font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif" text-anchor="middle" fill="#19372c">
+<rect x="70" y="30" width="560" height="64" rx="12" fill="#f8faf9" stroke="#9bb8aa" stroke-width="1.5"/>
+<text x="350.0" y="69.0" font-size="20" font-weight="600">Question and successful context</text>
+<rect x="70" y="134" width="560" height="82" rx="12" fill="#edf7f2" stroke="#9bb8aa" stroke-width="1.5"/>
+<text x="350.0" y="168.0" font-size="20" font-weight="600">Plan</text>
+<text x="350.0" y="196.0" font-size="20" font-weight="400">Requirements, responsibilities and dependencies</text>
+<rect x="40" y="270" width="290" height="86" rx="12" fill="#f8faf9" stroke="#9bb8aa" stroke-width="1.5"/>
+<text x="185.0" y="305.3" font-size="18" font-weight="600">Evidence A</text>
+<text x="185.0" y="333.3" font-size="18" font-weight="400">First responsibility</text>
+<rect x="370" y="270" width="290" height="86" rx="12" fill="#f8faf9" stroke="#9bb8aa" stroke-width="1.5"/>
+<text x="515.0" y="291.3" font-size="18" font-weight="600">Evidence B</text>
+<text x="515.0" y="319.3" font-size="18" font-weight="400">Another responsibility</text>
+<text x="515.0" y="347.3" font-size="18" font-weight="400">Honor dependencies</text>
+<rect x="70" y="410" width="560" height="64" rx="12" fill="#f8faf9" stroke="#9bb8aa" stroke-width="1.5"/>
+<text x="350.0" y="449.0" font-size="20" font-weight="600">Shared original pages and scoped findings</text>
+<rect x="70" y="522" width="560" height="82" rx="12" fill="#edf7f2" stroke="#9bb8aa" stroke-width="1.5"/>
+<text x="350.0" y="556.0" font-size="20" font-weight="600">Analyze</text>
+<text x="350.0" y="584.0" font-size="20" font-weight="400">Compare, calculate and draft</text>
+<rect x="70" y="660" width="560" height="82" rx="12" fill="#edf7f2" stroke="#9bb8aa" stroke-width="1.5"/>
+<text x="350.0" y="694.0" font-size="20" font-weight="600">Verify</text>
+<text x="350.0" y="722.0" font-size="20" font-weight="400">Check claims and gaps against original pages</text>
+<rect x="704" y="660" width="272" height="82" rx="12" fill="#f8faf9" stroke="#9bb8aa" stroke-width="1.5"/>
+<text x="840.0" y="693.3" font-size="18" font-weight="600">Targeted rework</text>
+<text x="840.0" y="721.3" font-size="18" font-weight="400">Retrieval or analysis revision</text>
+<rect x="704" y="818" width="272" height="82" rx="12" fill="#edf7f2" stroke="#9bb8aa" stroke-width="1.5"/>
+<text x="840.0" y="865.3" font-size="18" font-weight="600">Final verification</text>
+<rect x="70" y="818" width="560" height="82" rx="12" fill="#f8faf9" stroke="#9bb8aa" stroke-width="1.5"/>
+<text x="350.0" y="852.0" font-size="20" font-weight="600">Keep model-supported claims</text>
+<text x="350.0" y="880.0" font-size="20" font-weight="400">List model-reported unresolved items</text>
+<rect x="70" y="950" width="560" height="64" rx="12" fill="#f8faf9" stroke="#9bb8aa" stroke-width="1.5"/>
+<text x="350.0" y="989.0" font-size="20" font-weight="600">Save answer, citations, trace and costs</text>
+<path d="M350 94V134" fill="none" stroke="#52796b" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M350 216V242H185V270" fill="none" stroke="#52796b" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M350 242H515V270" fill="none" stroke="#52796b" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M185 356V383H350V410" fill="none" stroke="#52796b" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M515 356V383H350" fill="none" stroke="#52796b" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M350 474V522" fill="none" stroke="#52796b" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M350 604V660" fill="none" stroke="#52796b" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M350 742V818" fill="none" stroke="#52796b" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M630 701H704" fill="none" stroke="#52796b" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M840 742V818" fill="none" stroke="#52796b" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M704 859H630" fill="none" stroke="#52796b" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M350 900V950" fill="none" stroke="#52796b" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="450" y="784" font-size="17" fill="#526b60">No rework</text>
+<text x="802" y="640" font-size="17" fill="#526b60">At most one rework</text>
+<text x="824" y="302" font-size="17" fill="#526b60">Up to two concurrent calls</text>
+<text x="824" y="332" font-size="17" fill="#526b60">Wait for dependencies</text>
+</g></svg>

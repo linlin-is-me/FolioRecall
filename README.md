@@ -36,21 +36,7 @@ Verification is model judgement; all semantic reviews remain `human=not_checked`
 
 ## Agent workflow
 
-```mermaid
-flowchart TD
-    Q[Question and successful context] --> P[Plan requirements, responsibilities and dependencies]
-    P --> E1[Evidence A: first responsibility]
-    P --> E2[Evidence B: another responsibility, dependency-aware]
-    E1 --> S[Shared original pages and scoped findings]
-    E2 --> S
-    S --> A[Analyze, compare and calculate draft]
-    A --> V[Verify claims and requirements against pages]
-    V -->|At most one rework| R[Targeted retrieval or analysis revision]
-    R --> V2[Final verification]
-    V -->|No rework| F[Keep model-supported claims and model-reported unresolved items]
-    V2 --> F
-    F --> J[Save answer, citations, trace and costs]
-```
+![Agent workflow: planning, evidence gathering, analysis, verification and at most one rework](doc/assets/agent-workflow-en.svg)
 
 Fixed RAG reads the top six pages. Agent mode permits three searches, six distinct pages, eight model requests, 8,000 output tokens and 180 seconds of task activity. Progress comes from actual executor callbacks; hidden reasoning is not displayed.
 
