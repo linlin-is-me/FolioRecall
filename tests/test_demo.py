@@ -13,7 +13,10 @@ class DemoTests(unittest.TestCase):
         import gradio as gr
         from foliorecall.demo import serve_demo
         repo = Path(__file__).resolve().parents[1]
-        apps = []
+        apps, launches = [], []
+        def capture_launch(app, **kwargs):
+            apps.append(app)
+            launches.append(kwargs)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             examples = [{'question': 'First', 'mode': 'agent'},
@@ -27,7 +30,7 @@ class DemoTests(unittest.TestCase):
                  patch('foliorecall.agent.load_public_corpus',return_value={}), \
                  patch('foliorecall.generation.Bailian') as provider, \
                  patch('foliorecall.demo.process_memory',return_value={}), \
-                 patch.object(gr.Blocks,'launch',lambda app,**kwargs:apps.append(app)):
+                 patch.object(gr.Blocks,'launch',capture_launch):
                 serve_demo(root,{}, {'model_id':'test','device':'cpu','dtype':'float32'},
                     output=root/'records', agent_config_path=repo/'configs/agent-demo.json',
                     multi_agent_config_path=repo/'configs/agent-research-demo.json',public_corpus='unused')
@@ -41,6 +44,16 @@ class DemoTests(unittest.TestCase):
             events = [d for d in config['dependencies'] if any(t[0] in datasets for t in d['targets'])]
             self.assertEqual(len(events),3)
             self.assertTrue(all(d['outputs']==[question] for d in events))
+            # The actual launch receives the panel-scoped handler; href fallback
+            # and Unicode fragment matching remain covered by the render test.
+            javascript = launches[0]['js']
+            self.assertIn('#answer-panel a.fr-citation[href^="#qa-page-"]',javascript)
+            self.assertIn('!panel.contains(target)',javascript)
+            self.assertIn('event.preventDefault()',javascript)
+            self.assertIn('event.stopPropagation()',javascript)
+            self.assertIn("node.tagName === 'DETAILS'",javascript)
+            self.assertIn('target.scrollIntoView(',javascript)
+            self.assertNotIn('location.hash',javascript)
 
     def test_research_verification_distinguishes_reworked_history(self):
         result = {'completed': True,
