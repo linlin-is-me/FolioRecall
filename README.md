@@ -8,12 +8,12 @@ English · [简体中文](README.zh-CN.md)
 
 FolioRecall combines visual retrieval and BM25 for documents containing text, tables and figures. LangGraph schedules responsibility-specific evidence tasks and dependencies, then analyzes pages, verifies a draft and optionally reworks once. A single-Agent path remains available for quick questions. The local UI reports actual steps, supports English and Chinese follow-ups, and keeps the CPU query model and index resident.
 
-The interface uses white cards, a light-gray background and green accents. Task cards show distinct responsibilities, dependencies and execution state; page records identify recipient roles, and verification panels preserve draft versions, issues and rework outcomes.
+The interface uses white cards, a light-gray background and green accents. Task cards show distinct responsibilities, dependencies and execution state; page records identify tasks with successful page reads, and verification panels preserve draft versions, issues and rework outcomes. A successful read tool does not establish that a subsequent evidence-agent request received the page image.
 
 > The local `0.1.0` review candidate integrates multi-turn QA, collaboration views, four offline cases and the ONNX FP32 query backend. Updated source has not been pushed and assets have not been published.
 > [Candidate review](doc/v0.1.0发布说明.md) · [Complete quick start](doc/v0.1.0快速开始.md)
 
-The research workflow has 60 live comparison/ablation attempts, 60 assistant reviews and six installed-wheel browser confirmations. This presentation update reuses those records without new API calls or another evaluation. Research demonstrates collaborative execution; single-Agent remains the recommended fast path because overall coverage did not improve. [Results and limitations](doc/首版使用与评测.md#multi-agent-research-results)
+The historical method at `6fe8d8c` completed 60 live comparison/ablation attempts, 60 assistant reviews and six installed-wheel browser confirmations. This presentation update reuses those records; the current candidate uses real retrieval with a simulated generator for integration checks, with no new API calls or evaluation. Research demonstrates collaborative execution; single-Agent remains the recommended fast path because overall coverage did not improve. [Historical live results](doc/首版使用与评测.md#multi-agent-research-results) · [Current presentation checks](doc/首版使用与评测.md#agent-showcase)
 
 ## A real research task
 
@@ -47,7 +47,7 @@ flowchart TD
     A --> V[Verify claims and requirements against pages]
     V -->|At most one rework| R[Targeted retrieval or analysis revision]
     R --> V2[Final verification]
-    V -->|No rework| F[Keep supported claims, retain unresolved requirements]
+    V -->|No rework| F[Keep model-supported claims and model-reported unresolved items]
     V2 --> F
     F --> J[Save answer, citations, trace and costs]
 ```
@@ -62,7 +62,7 @@ Research uses at most two concurrent remote calls and a shared limit of 16 reque
 - **Research collaboration:** LangGraph `StateGraph` and conditional edges connect planning, evidence gathering, analysis, verification and one rework. `Send` dispatches ready evidence tasks; dependencies wait, while technical failures retain partial results and mark blocked work.
 - **Tools and evidence:** search/read feedback, resource limits, current-turn citation permissions, structured answers and SQLite usage accounting.
 - **Multi-turn application:** the latest three successful turns supply context. One request resolves references and translates Chinese follow-ups within the current turn's budget. Previous answers do not grant citation permission.
-- **Concurrency and recovery:** a parent submission lock serializes user tasks. A separate query lock serializes only local encoding and retrieval, allowing up to two overlapping remote evidence-agent calls. Role-keyed state, successful operations, shared evidence and SQLite cost reservations are reused on recovery. Browser disconnection does not resend an active task; the worker still saves its terminal result.
+- **Concurrency and recovery:** a parent submission lock serializes user tasks. A separate query lock serializes only local encoding and retrieval, allowing up to two overlapping remote evidence-agent calls. The same attempt continues from its graph checkpoint; an eligible retry after a recorded terminal network failure starts a new attempt and traverses the graph using cached successful operations. Browser disconnection does not resend an active task; the worker still saves its terminal result.
 - **Collaboration views:** actual callbacks expose responsibilities, dependencies and execution state. Draft versions separate verification and rework; online results and API-free historical cases use the same presentation components.
 - **Measured delivery:** CLI, resident browser UI, isolated installation, portable examples, a complete ONNX query backend and paired quality/cost comparisons. Failures and negative training results remain in the records.
 
@@ -141,7 +141,7 @@ Agent minus Hybrid RAG coverage is −0.014693 on 76 common pairs, with higher c
 
 The v0.1.0 multi-turn interface has separate functional verification; A5 is not a benchmark of this new path. Existing mistakes include omitted qualifications, overbroad conclusions and incorrect insufficiency judgments. A valid page ID alone does not establish semantic support.
 
-Five actual browser turns passed progress, follow-up, reset, citation and JSON checks, using 25 API calls with CNY 0.455042 known estimated cost. The cross-document example read only the population report and omitted employment-report evidence; the follow-up retained that omission. The screenshots preserve this limitation. The Saturn case returned no factual claims and reported insufficient evidence. These cases verify use, not aggregate answer accuracy.
+Before LangGraph integration, the earlier multi-turn version at `05d286a` completed five live RAG/single-Agent browser turns, checking progress, follow-up, reset, citations and JSON. They used 25 API calls with CNY 0.455042 known estimated cost. That version's cross-document example read only the population report and omitted employment-report evidence; its follow-up retained the omission. Its Saturn case returned no factual claims and reported insufficient evidence. These historical turns are separate from the four research cases above and do not establish current-version quality or aggregate answer accuracy. [Earlier five-turn record](doc/首版使用与评测.md#v010-多轮文档agent与审核候选)
 
 A separate evidence-coverage development comparison evaluated 12 turns with baseline and candidate (24 assistant-reviewed attempts). The candidate reduced requests and cost, but required-fact coverage fell from 0.6402 to 0.6061 and core cross-document omissions remained. It was not adopted; defaults and the original candidate package are unchanged. [Results and limitations (Chinese)](doc/首版使用与评测.md#agent证据覆盖开发对照2026-10-14)
 
@@ -203,7 +203,7 @@ The six-arm depth study includes physical four-layer pruning, independent traini
 ## Scope and limitations
 
 - English corpus; Chinese questions and follow-ups retrieve English pages. Native Chinese-document retrieval is unverified.
-- Local single-user application with remote generation. Browser-state conversations clear on refresh; there is no persistent conversation database or multi-user deployment.
+- Local single-user application with remote generation. Context resides in Gradio server-side session memory and is not reused after refresh or a new conversation. Terminal records are saved separately on disk; there is no persistent conversation database or multi-user deployment.
 - Answers may misread figures, omit facts or cite insufficient evidence. History resolves references and is not verified factual evidence.
 - Fixed Q&A tasks and assistant scoring limit generalization claims. Earlier training studies mostly used one seed; the new teacher comparison uses three, with document-level isolation and upstream training overlap still unverified.
 - Retrieval incurs no generation charges; Q&A requires a key and service balance. Reranking and unrestricted external tools are not implemented.

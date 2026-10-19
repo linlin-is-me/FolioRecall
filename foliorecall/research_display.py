@@ -179,8 +179,9 @@ def research_html(result=None, events=None, page_prefix='qa-page-'):
     if pages:
         cited = {pid for c in (result or {}).get('answer', {}).get('claims', []) for pid in c.get('evidence_page_ids', [])}
         chunks.append('<details class="fr-research-details"><summary>证据交接 · '+str(len(pages))+'张原页</summary>'
-                      '<p class="fr-research-note">分别记录取证和分析收到的页面；收到页面不等于答案已引用或事实得到支持。</p>'
-                      '<div class="fr-table-wrap"><table><thead><tr><th>原页</th><th>收到原页的取证角色</th><th>分析收到（版本）</th><th>最终引用</th></tr></thead><tbody>')
+                      '<p class="fr-research-note">按工具记录列出成功读页的取证任务，不代表取证模型随后已看到页面图像。'
+                      '分析接收版本和最终引用单独记录，引用不等于事实得到支持。</p>'
+                      '<div class="fr-table-wrap"><table><thead><tr><th>原页</th><th>成功读页的取证任务</th><th>分析收到（版本）</th><th>最终引用</th></tr></thead><tbody>')
         for page in pages:
             receivers = '、'.join(roles.get(r, r) for r in page.get('received_by', [])) or '未记录'
             versions = '、'.join('v'+str(v) for v in page.get('analysis_versions', [])) or '未记录'

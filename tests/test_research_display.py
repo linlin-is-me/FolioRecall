@@ -32,8 +32,12 @@ class ResearchDisplayTests(unittest.TestCase):
         self.assertIn('&lt;values&gt;',value)
         self.assertNotIn('<report>',value)
         self.assertIn('qa-page-d%3A1',value)
-        self.assertIn('收到原页的取证角色',value)
+        self.assertIn('成功读页的取证任务',value)
+        self.assertNotIn('收到原页的取证角色',value)
+        self.assertIn('不代表取证模型随后已看到页面图像',value)
         self.assertIn('分析收到（版本）',value)
+        self.assertIn('最终引用',value)
+        self.assertIn('已引用',value)
         self.assertNotIn('草稿采用',value)
         self.assertIn('取数、计算',value)
         self.assertLess(value.index('v1-c1'),value.index('new support'))
@@ -64,6 +68,9 @@ class ResearchDisplayTests(unittest.TestCase):
         self.assertEqual(len(state['pages']),1)
         self.assertEqual(state['pages'][0]['received_by'],['worker-1','worker-2'])
         self.assertNotIn('analysis_versions',state['pages'][0])
+        rendered=research_html(events=events)
+        self.assertIn('不代表取证模型随后已看到页面图像',rendered)
+        self.assertIn('等待回答',rendered)
 
     def test_failed_empty_draft_is_not_completed_or_verified(self):
         result=saved_result();r=result['research']
