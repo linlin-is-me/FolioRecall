@@ -90,6 +90,34 @@ def research_documents(out):
     """Refresh portable navigation and the manifest; preserve measured results."""
     package = out/'package'
     record = json.loads((out/'assembly.json').read_text())
+    showcase = ROOT/'outputs/extensions/A/agent-showcase-v1'
+    has_showcase = (showcase/'index.html').exists()
+    if has_showcase:
+        # Keep the public cases separate from local verification logs and fixtures.
+        target = package/'showcase'
+        target.mkdir(exist_ok=True)
+        for name in ('index.html', 'SOURCES.md', 'manifest.json'):
+            shutil.copy2(showcase/name, target/name)
+        for name in ('cases', 'pages'):
+            shutil.copytree(showcase/name, target/name, dirs_exist_ok=True)
+        record['showcase_source'] = str(showcase.relative_to(ROOT))
+        record['showcase_cases'] = json.loads((showcase/'manifest.json').read_text(encoding='utf-8'))['cases']
+    for name in ('SHOWCASE-VALIDATION.md', 'showcase-validation.json'):
+        if (out/name).exists():
+            shutil.copy2(out/name, package/name)
+    if (ROOT/'doc/assets/agent-showcase-research.png').exists():
+        shutil.copy2(ROOT/'doc/assets/agent-showcase-research.png', package/'screenshots/agent-showcase-research.png')
+    showcase_intro = ('''本次新增实时协作状态、任务责任与依赖、原页归属和版本化核验展示。
+四份离线案例复用历史真实记录，在当前浅色界面重新呈现，不重新生成答案。
+本轮模拟生成器的浏览器验证仅检查界面与装配，不作为新的真实模型质量或性能结果。
+''' if has_showcase else '''本次修订示例模式、导航、打包和说明，没有重新生成实验回答。
+''')
+    showcase_links = ('- [四份离线协作案例](showcase/index.html)：无需API密钥、模型或索引。\n'
+                      '- [案例来源与范围](showcase/SOURCES.md)。\n' if has_showcase else '')
+    if (package/'SHOWCASE-VALIDATION.md').exists():
+        showcase_links += '- [本轮展示与安装验证](SHOWCASE-VALIDATION.md)。\n'
+    if (package/'showcase-validation.json').exists():
+        showcase_links += '- [本轮结构化验证记录](showcase-validation.json)。\n'
     (package/'RELEASE-NOTES.md').write_text('''# FolioRecall v0.1.0 文档研究候选
 
 本地审核候选，尚未推送或发布。规划协调、责任取证、分析和核验组成研究流程，
@@ -97,23 +125,34 @@ def research_documents(out):
 
 60次真实对照及助手评审、六次安装态浏览器确认保留原结果。
 研究模式整体覆盖未优于单Agent，评分保持human=not_checked。
-本次仅修正示例模式、导航、打包和说明，没有重新生成实验回答。
-界面默认使用白色卡片、浅灰背景和绿色强调色；恢复浅色不改变问答方法。
+'''+showcase_intro+'''界面默认使用白色卡片、浅灰背景和绿色强调色，问答方法保持不变。
+本轮没有新增付费调用、模型导出、页面编码或质量评测。
 
 ## 启动与核对
 
 - [快速开始](QUICKSTART.md)：安装、免费检索、研究模式与快速问答。
+'''+showcase_links+'''
 - [实测结果与限制](RESULTS.md)和[结果摘要](results-summary.json)。
-- [验证说明](VALIDATION.md)和[六次真实浏览器确认](browser-validation.json)。
+- [历史研究候选验证](VALIDATION.md)和[历史六次真实浏览器确认](browser-validation.json)。
 - [附件清单](ASSETS.md)与[变更摘要](CHANGE-SUMMARY.md)。
 - [源码包](foliorecall-0.1.0.tar.gz)：解压后查看README.md、README.zh-CN.md与doc/中的面试材料及完整实验说明。
 
 模型和42页示例单独提供。完整PDF、教师权重、凭据、原始运行和检查点不在附件内。
-截图中的JRC确认用例来自本机256页库，问答质量证据与便携42页示例分别记录。
+JRC案例来自本机256页库；离线案例仅附精选页面，不提供完整JRC库。
+历史实测、当前展示及便携42页库的功能验证分别记录。
 ''',encoding='utf-8')
     if (ROOT/'doc/assets/research-light-ui.png').exists():
         shutil.copy2(ROOT/'doc/assets/research-light-ui.png', package/'screenshots/research-light-ui.png')
     quick = (ROOT/'doc/v0.1.0快速开始.md').read_text(encoding='utf-8')
+    if has_showcase and 'showcase/index.html' not in quick:
+        title, body = quick.split('\n', 1)
+        quick = title+'''\n\n## 先看协作案例，无需API
+
+直接打开候选附件目录中的 `showcase/index.html`，查看四份历史真实调用的任务、
+原页、草稿和核验记录。无需安装Python、加载模型或填写API密钥。
+案例的当前浅色展示没有触发新调用；模拟生成器验证也不计入原60次真实结果。
+需要执行免费检索或发起新问答时，再按下文安装。
+'''+body
     # This copy is also embedded in the demo zip, which may be extracted elsewhere.
     quick = re.sub(r'\[([^\]]+)\]\(首版使用与评测\.md#[^)]+\)',
                    r'\1（见附件RESULTS.md及源码包doc/首版使用与评测.md）',quick)
@@ -137,13 +176,21 @@ def research_documents(out):
     (package/'CHANGE-SUMMARY.md').write_text(
         f'# 候选来源\n\nwheel源码：`{record["source_commit"]}`；付费方法：`{record["paid_runtime_commit"]}`。\n\n'
         f'源码包及文档：`{record.get("sdist_source_commit", record["source_commit"])}`。\n\n'
-        f'比较基点：本地缓存origin/main `{base}`，未刷新远端。\n\n'
-        '研究图与原始实验保持不变。本轮示例只填入问题、保留模式，更新便携导航与说明。\n\n'
+        f'比较基点：本地缓存origin/main `{base}`，未刷新远端。\n\n'+
+        ('问答方法和原始实验保留。本轮增加实际事件驱动的协作视图及历史案例展示，'
+         '没有新增模型调用或质量评测。\n\n' if has_showcase else
+         '研究方法与原始实验保留，本轮更新便携导航与说明。\n\n')+
         '```text\n'+changes+'```\n',encoding='utf-8')
     files = sorted(p for p in package.rglob('*') if p.is_file() and p.name!='ASSETS.md')
     (package/'ASSETS.md').write_text(
         '# 本地审核附件\n\n示例来源见demo-bundle.zip中的SOURCES.md，模型来源及许可随独立模型包提供。'
-        'research前缀为本轮真实界面，其他截图保留历史展示。\n\n'
+        'RESULTS.md、results-summary.json与browser-validation.json保留历史真实实验。'
+        'VALIDATION.md为继承的历史验证记录，不表示当前组合再次执行了付费问答。\n\n'+
+        ('[离线协作案例](showcase/index.html)使用历史真实记录，来源见[案例说明](showcase/SOURCES.md)。'
+         'agent-showcase-research.png为这些记录在当前浅色界面的实际截图；'
+         '其余研究截图保留历史展示。本轮模拟界面与安装检查见SHOWCASE-VALIDATION.md及'
+         'showcase-validation.json（有实际记录时提供），不作为新质量结果。\n\n'
+         if has_showcase else '')+
         '| 文件 | 字节 |\n|---|---:|\n'+''.join(
             f'| [{p.relative_to(package).as_posix()}]({p.relative_to(package).as_posix()}) | {p.stat().st_size} |\n'
             for p in files),encoding='utf-8')
@@ -172,10 +219,13 @@ def prepare_research(out, source):
         shutil.copy2(ROOT/name,package/name)
     if (source/'final-install-validation.json').exists():
         shutil.copy2(source/'final-install-validation.json',package/'previous-install-validation.json')
-    with (package/'VALIDATION.md').open('a',encoding='utf-8') as stream:
-        stream.write('\n本次修订的安装与示例检查见final-install-validation.json；'
-                     'previous-install-validation.json保留前一候选的安装记录。'
-                     '生成流程和实测结果不变，不重跑实验或调用付费服务。\n')
+    inherited = (package/'VALIDATION.md').read_text(encoding='utf-8')
+    (package/'VALIDATION.md').write_text(
+        '# 继承的历史研究候选验证\n\n以下内容及browser-validation.json来自来源候选，'
+        '对应原有60次真实结果和历史安装验证，不表示本轮重新调用生成模型。'
+        '本轮展示与安装检查如已完成，另存SHOWCASE-VALIDATION.md和showcase-validation.json。'
+        'previous-install-validation.json仅在来源候选提供时保留。\n\n---\n\n'+inherited,
+        encoding='utf-8')
     results = json.loads((package/'results-summary.json').read_text())
     write(out/'assembly.json',{'version':'0.1.0','workflow':'research',
         'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),

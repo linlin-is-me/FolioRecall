@@ -8,27 +8,29 @@ English · [简体中文](README.zh-CN.md)
 
 FolioRecall combines visual retrieval and BM25 for documents containing text, tables and figures. LangGraph schedules responsibility-specific evidence tasks and dependencies, then analyzes pages, verifies a draft and optionally reworks once. A single-Agent path remains available for quick questions. The local UI reports actual steps, supports English and Chinese follow-ups, and keeps the CPU query model and index resident.
 
-The interface defaults to white cards, a light-gray background and green accents, retaining the simple two-column layout. [Current light interface](doc/assets/research-light-ui.png)
+The interface uses white cards, a light-gray background and green accents. Task cards show distinct responsibilities, dependencies and execution state; page records identify recipient roles, and verification panels preserve draft versions, issues and rework outcomes.
 
-> The local `0.1.0` final candidate is complete: multi-turn Agent features, the recommended ONNX FP32 backend, refreshed layout and onboarding, and the project logo. It awaits review; updated source has not been pushed and assets have not been published.
+> The local `0.1.0` review candidate integrates multi-turn QA, collaboration views, four offline cases and the ONNX FP32 query backend. Updated source has not been pushed and assets have not been published.
 > [Candidate review](doc/v0.1.0发布说明.md) · [Complete quick start](doc/v0.1.0快速开始.md)
 
-The research workflow now has 60 live comparison/ablation attempts, 60 assistant reviews and six installed-wheel browser confirmations. It is delivered as an optional engineering workflow; single-Agent remains the recommended fast path because overall coverage did not improve. [Results and limitations](doc/首版使用与评测.md#multi-agent-research-results).
+The research workflow has 60 live comparison/ablation attempts, 60 assistant reviews and six installed-wheel browser confirmations. This presentation update reuses those records without new API calls or another evaluation. Research demonstrates collaborative execution; single-Agent remains the recommended fast path because overall coverage did not improve. [Results and limitations](doc/首版使用与评测.md#multi-agent-research-results)
 
 ## A real research task
 
-The planner separates energy-impact classification from urban-policy analysis, with an explicit dependency. Verification finds missing policy evidence; targeted rework reads the original policy pages and revises the answer. Other runs retain missed evidence, verifier errors and failures.
+When comparing population and employment reports, the planner assigns distinct evidence responsibilities. Two evidence agents search and read pages; the analyst and verifier receive actual pages, and final claims reference their evidence. The screenshot renders a saved historical live call in the current light interface. It is not a new call or a new quality evaluation.
 
-![Actual research answer with original-page citations](doc/assets/research-answer.jpg)
+![Population and employment research: responsibilities, collaboration state and page evidence](doc/assets/agent-showcase-research.png)
 
-The interface exposes role/tool events and separates initial verification, rework and final verification. Verification is a model judgement, not independent human confirmation. [Workflow and results](doc/首版使用与评测.md#multi-agent-research-results)
+Four static cases open without an API key, model or index, with source pages, tasks, drafts and verification records. They use existing experiments; no answer was regenerated for presentation.
 
-<details><summary>Actual request progress and insufficient-evidence result</summary>
+| Case | Engineering behavior to inspect | Limitation retained |
+|---|---|---|
+| Population and employment `cov-01` | Distinct responsibilities, overlapping requests and multiple sources | Reading multiple sources does not establish complete coverage |
+| Chinese chart `confirm-04` | A predecessor dependency, shared pages and percentage calculation | Arithmetic checks do not establish that the operands answer the question |
+| Urban policy `confirm-03` | Gap verification, assigned retrieval rework and two drafts | Required facts remain missing after rework |
+| Saturn `cov-11` | Invalid verification output, failure stage and retained draft | A technical failure is not a valid insufficient-evidence answer |
 
-![Agent request in progress](doc/assets/v010-agent-running.png)
-![Insufficient evidence for Saturn](doc/assets/v010-insufficient.png)
-
-</details>
+Verification is model judgement; all semantic reviews remain `human=not_checked`. [Offline cases and instructions](doc/首版使用与评测.md#agent-showcase) · [Workflow and results](doc/首版使用与评测.md#multi-agent-research-results)
 
 [Five-minute demonstration](doc/项目介绍与面试准备.md#五分钟演示) · [Usage and verification](doc/首版使用与评测.md#v010-多轮文档agent与审核候选)
 
@@ -57,15 +59,16 @@ Research uses at most two concurrent remote calls and a shared limit of 16 reque
 ## Implementation and contributions
 
 - **Retrieval integration:** page import, resumable encoding, FAISS indexing, page-text alignment and visual/BM25 Top-50 fusion with RRF `k=60`.
-- **Research collaboration:** distinct responsibilities and dependencies, shared original pages, analysis and arithmetic checks, claim verification and one rework; LangGraph checkpoints reuse the HTTPX client, tools and shared resource/cost reservations.
+- **Research collaboration:** LangGraph `StateGraph` and conditional edges connect planning, evidence gathering, analysis, verification and one rework. `Send` dispatches ready evidence tasks; dependencies wait, while technical failures retain partial results and mark blocked work.
 - **Tools and evidence:** search/read feedback, resource limits, current-turn citation permissions, structured answers and SQLite usage accounting.
 - **Multi-turn application:** the latest three successful turns supply context. One request resolves references and translates Chinese follow-ups within the current turn's budget. Previous answers do not grant citation permission.
-- **Local execution:** a worker and queue expose progress; a shared lock serializes retrieval/model access. A disconnected browser does not resend an active request; the worker still saves its terminal result.
+- **Concurrency and recovery:** a parent submission lock serializes user tasks. A separate query lock serializes only local encoding and retrieval, allowing up to two overlapping remote evidence-agent calls. Role-keyed state, successful operations, shared evidence and SQLite cost reservations are reused on recovery. Browser disconnection does not resend an active task; the worker still saves its terminal result.
+- **Collaboration views:** actual callbacks expose responsibilities, dependencies and execution state. Draft versions separate verification and rework; online results and API-free historical cases use the same presentation components.
 - **Measured delivery:** CLI, resident browser UI, isolated installation, portable examples, a complete ONNX query backend and paired quality/cost comparisons. Failures and negative training results remain in the records.
 
-Qwen and NanoVDR provide upstream models and weights. Sentence Transformers, FAISS, BM25 and Gradio provide reusable infrastructure. This project's contribution is integration, tool execution, application delivery and controlled comparisons; public-student speedups belong to the upstream model. [Sources](NOTICE) · [Interview material](doc/项目介绍与面试准备.md)
+LangGraph provides graph execution, branch scheduling and checkpoint interfaces. This project implements task contracts, dependency rules, evidence permissions, resource allocation, verification/rework and UI integration. Qwen and NanoVDR provide models and weights; Sentence Transformers, FAISS, BM25 and Gradio provide reusable components. The public student's base capabilities and speedup belong to the upstream model. [Sources](NOTICE) · [Interview material](doc/项目介绍与面试准备.md)
 
-The stack uses Python, PyTorch / Sentence Transformers, ONNX Runtime, FAISS / BM25, HTTPX, SQLite, LangGraph and Gradio. The current research workflow has a planner, up to two responsibility-specific evidence agents, an analyst and a verifier, with dependencies, shared pages and one targeted rework. It completed 54 main comparisons and six ablations, totaling 60 live attempts. The earlier basic workflow and single-Agent loop remain available; results are reported under their own methods and budgets. [Research results](doc/首版使用与评测.md#multi-agent-research-results) · [Stack and code entry points](doc/首版使用与评测.md#current-stack)
+Code entry points: [research graph](foliorecall/multi_agent_research.py), [shared execution and recovery](foliorecall/multi_agent.py), [sessions and queues](foliorecall/chat.py), and [browser integration](foliorecall/demo.py). The stack uses Python, PyTorch / Sentence Transformers, ONNX Runtime, FAISS / BM25, HTTPX, SQLite, LangGraph and Gradio. [Stack and usage](doc/首版使用与评测.md#current-stack)
 
 <details><summary>Earlier basic workflow: 54 main comparisons and eight concurrency diagnostics</summary>
 
@@ -74,6 +77,8 @@ In the earlier basic-workflow comparison, 18 turns per arm had assistant-reviewe
 </details>
 
 ## Quick start
+
+**Start with the collaboration cases:** open `showcase/index.html` in the local candidate to inspect four historical live records, their tasks, source pages and verification. This entry needs no Python installation, model or API key. Assets have not been publicly released; see the [local review entry](doc/v0.1.0发布说明.md).
 
 Tested on Python 3.10 and Ubuntu 22.04 / WSL 2. Obtain the local wheel, `demo-bundle.zip` and `query-onnx-fp32.zip`. The 42-page demo includes vectors, previews, text and BM25. The separate model asset contains the complete query student; no GPU, teacher weights or index rebuilding is required.
 

@@ -18,12 +18,12 @@ def document_label(name, limit=46):
 
 EMPTY_ANSWER = '''<div class="fr-empty">
 <span class="fr-eyebrow">答案与证据</span><h3>从一个文档问题开始</h3>
-<p>输入文档问题，或从下方示例开始，再提交问答。RAG 读取检索前页直接回答，Agent 可继续搜索与读页。</p>
-<p>回答后可用中文追问；点击引用查看原页。换话题时新建会话。</p></div>'''
+<p>输入问题，或点击示例填入后提交。文档研究按责任取证、分析与核验，单Agent适合快速问答，RAG直接使用检索前页。</p>
+<p>回答后可用中文追问；点击引用查看原页。换话题时新建会话。候选包中的 showcase/index.html 可离线查看真实案例，无需API。</p></div>'''
 
 BUSY_ANSWER = '''<div class="fr-empty" role="status">
-<span class="fr-eyebrow">正在执行</span><h3>正在查找文档证据</h3>
-<p>实际搜索、读页与模型请求会显示在下方。完成后，答案和引用将出现在这里。</p></div>'''
+<span class="fr-eyebrow">正在执行</span><h3>任务正在处理</h3>
+<p>上方展示实际进度；研究模式依次规划、取证、分析与核验，必要时返工一次。结束后在此查看答案、原页与核验记录。</p></div>'''
 
 CSS = '''
 .gradio-container {
@@ -79,6 +79,8 @@ CSS = '''
 #conversation { border-radius: 12px; border-color: var(--fr-line); }
 #answer-panel { color: var(--fr-ink); }
 #answer-panel:empty, #progress-panel:empty { display: none; }
+.fr-research-log { border: 1px solid var(--fr-line); border-radius: 10px; padding: 12px 16px; background: var(--fr-surface); }
+.fr-research-log > summary { cursor: pointer; color: var(--fr-muted); font-size: 13px; }
 .fr-answer, .fr-empty { background: var(--fr-surface); border: 1px solid var(--fr-line);
   padding: 26px; border-radius: 16px; }
 .fr-empty { min-height: 240px; display: flex; flex-direction: column; justify-content: center; }

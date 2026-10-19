@@ -9,6 +9,7 @@ import uuid
 
 from .qa_storage import atomic_json as write_json
 from .demo_style import document_label
+from .research_display import research_html, is_research, STATES, REASONS
 
 
 def new_session():
@@ -38,15 +39,16 @@ def messages_for(session):
     return messages
 
 
-def progress_html(events):
+def progress_html(events, show_research=True):
     labels = {'queued': '等待执行', 'model_request': '模型请求', 'query_rewrite': '追问改写',
               'coordinate': '任务分工', 'evidence_merge': '证据汇合',
               'search_pages': '搜索页面', 'read_page': '读取页面', 'source_access_status': '来源读取状态',
               'final_answer': '最终回答', 'terminal': '任务结束',
-              'research_analysis':'证据分析','research_verify':'原页核验','research_rework':'定向返工'}
+              'research_analysis':'证据分析','research_verify':'原页核验','research_rework':'定向返工',
+              'research_task':'取证任务'}
     phases = {'query_translation': '中文转换', 'query_rewrite': '追问改写',
               'tool_decision': '选择工具', 'final_answer': '最终回答'}
-    statuses = {'started': '执行中', 'completed': '完成', 'already_read': '本轮已读',
+    statuses = {**STATES, 'started': '执行中', 'completed': '完成', 'already_read': '本轮已读',
                 'error': '错误', 'failed': '未完成', 'limit': '达到限额'}
     rows = []
     role_labels = {}
@@ -81,20 +83,24 @@ def progress_html(events):
         if event.get('termination_reason'):
             detail = event['termination_reason']
         if event.get('reason'):
-            detail += ' · ' + event['reason']
+            detail += ' · ' + REASONS.get(event['reason'], event['reason'])
         if event.get('role') and 'elapsed_seconds' in event:
             detail += f' · {event["elapsed_seconds"]:.1f}秒'
         if event.get('cost_cny') is not None:
             detail += f' · {event["cost_cny"]:.6f}元'
         rows.append('<li><strong>' + html.escape(name) + '</strong><span class="fr-step-status ' +
                     html.escape(event['status'], quote=True) + '">' +
-                    html.escape(statuses.get(event['status'], event['status'])) +
+                    html.escape((STATES if event['event']=='research_task' else statuses).get(event['status'], event['status'])) +
                     '</span><small title="' + html.escape(full_name, quote=True) + '">' + html.escape(detail) + '</small></li>')
     latest = events[-1] if events else None
     current = (labels.get(latest['event'], latest['event']) + ' · ' +
                statuses.get(latest['status'], latest['status'])) if latest else '等待执行'
-    return ('<div id="agent-progress"><div class="fr-progress-head"><h3>执行步骤</h3><span>' +
-            html.escape(current) + '</span></div><ol>' + ''.join(rows) + '</ol></div>')
+    log = ('<div id="agent-progress"><div class="fr-progress-head"><h3>执行步骤</h3><span>' +
+           html.escape(current) + '</span></div><ol>' + ''.join(rows) + '</ol></div>')
+    if is_research(None, events):
+        return ((research_html(events=events) if show_research else '') +
+                '<details class="fr-research-log"><summary>完整执行日志 · '+str(len(events))+'条事件</summary>'+log+'</details>')
+    return log
 
 
 def stream_chat(question, mode, session, execute, pages, request_lock, output=None):
@@ -145,5 +151,5 @@ def stream_chat(question, mode, session, execute, pages, request_lock, output=No
             result, rendered = value
             current['turns'].append({k: result[k] for k in
                 ('question', 'retrieval_query', 'answer', 'completed', 'termination_reason')})
-            yield messages_for(current), rendered, progress_html(events), result, current, False
+            yield messages_for(current), rendered, progress_html(events, show_research=False), result, current, False
             return

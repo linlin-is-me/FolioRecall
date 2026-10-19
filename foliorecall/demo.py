@@ -9,6 +9,7 @@ import threading
 from .io import provenance, read_json, write_json
 from .query import load_retriever, load_search_session, process_memory, retrieve
 from .demo_style import CSS, EMPTY_ANSWER, BUSY_ANSWER, document_label
+from .research_display import research_html, research_css
 
 LOGO_PATH = Path(__file__).with_name('assets') / 'logo.png'
 WORDMARK_PATH = LOGO_PATH.with_name('wordmark.png')
@@ -62,7 +63,7 @@ def qa_display(result, pages):
         label, tone = '证据不足', 'warning'
     else:
         label, tone = '回答已生成', ''
-    chunks = ['<section class="fr-answer"><header class="fr-answer-head"><h3>本轮回答与引用</h3>'
+    chunks = [research_html(result=result), '<section class="fr-answer"><header class="fr-answer-head"><h3>本轮回答与引用</h3>'
               f'<span class="fr-answer-status {tone}">{label}</span></header><div>']
     for claim in result['answer']['claims']:
         links = []
@@ -81,24 +82,6 @@ def qa_display(result, pages):
         chunks.append('</aside>')
     if not result.get('completed', True):
         chunks.append('<p class="fr-note">终止原因：'+escape(result.get('termination_reason', 'unknown'))+'</p>')
-    if 'research' in result:
-        research = result['research']
-        chunks.append('<details class="fr-evidence"><summary>任务分工与模型核验</summary>')
-        chunks.append('<p class="fr-note">核验属于模型判断，未经独立人工确认。</p><ul>')
-        for task in research.get('tasks',[]):
-            chunks.append('<li>'+escape(task['name'])+'：'+escape(task['question'])+'</li>')
-        chunks.append('</ul><p>核验状态：'+escape(research.get('verification_status','incomplete'))+'</p>')
-        checks = research.get('verifications',[])
-        for i,check in enumerate(checks):
-            label = ('首次核验（返工前）' if i == 0 else '末次核验') if len(checks)>1 else '首次核验'
-            chunks.append('<h4>'+label+'</h4>')
-            for issue in check['issues']:
-                chunks.append('<p>'+escape(issue['detail'])+'</p>')
-            if not check['issues']:
-                chunks.append('<p>未报告问题。</p>')
-        if research.get('rework',{}).get('triggered'):
-            chunks.append('<p>已执行一次定向返工。</p>')
-        chunks.append('</details>')
     if result['evidence']:
         chunks.append('<div class="fr-evidence-list"><h3>本轮读取的原页</h3>')
     for evidence in result['evidence']:
@@ -248,6 +231,7 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
                                          buttons=['copy', 'copy_all'])
                     gr.Markdown('刷新或新建会话清空上下文，不清空费用。引用仅来自本轮读取的页面。', elem_classes=['fr-note'])
                   with gr.Column(scale=2, min_width=0, elem_classes=['fr-results']):
+                    progress = gr.HTML(elem_id='progress-panel')
                     answer_html = gr.HTML(value=EMPTY_ANSWER, elem_id='answer-panel')
                     example_file = Path(folder) / 'qa-examples.json'
                     if example_file.exists():
@@ -269,7 +253,6 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
                                             inputs=question, label='先点击新建会话，再尝试这些问题 · 保留当前模式')
                     else:
                         gr.Markdown('从当前文档中的一个主题开始，例如询问某项结论及其证据页，再追问适用条件或时间范围。', elem_classes=['fr-note'])
-                    progress = gr.HTML(elem_id='progress-panel')
                     with gr.Accordion('完整 JSON、工具记录与费用', open=False):
                         record_json = gr.JSON(label='本轮完整记录', elem_id='qa-json')
                 def submit_qa(query, selected_mode):
@@ -335,7 +318,7 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
                     gr.Markdown(f'协作模式最多 {multi_config.get("max_parallel_workers",2)} 个检索Agent并行、{multi_config["max_requests"]} 次请求、{multi_config["max_pages"]} 页；仅检索编码串行。')
     try:
         app.launch(server_name='127.0.0.1', server_port=port, share=False, inbrowser=False,
-                   theme=theme, css=CSS, favicon_path=str(LOGO_PATH),
+                   theme=theme, css=CSS + research_css(), favicon_path=str(LOGO_PATH),
                    js="""() => {
                      const url = new URL(window.location.href);
                      if (!url.searchParams.has('__theme')) {

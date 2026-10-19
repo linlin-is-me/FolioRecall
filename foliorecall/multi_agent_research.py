@@ -175,6 +175,11 @@ def build_research_graph(runtime, saver):
         save(state, phase)
         return r.request(logical,role,messages,tools,phase,max_tokens,reserve=reserve)
 
+    def task_event(worker, phase, state, reason):
+        # This records execution state, not whether the evidence answers the question.
+        r.emit('research_task',state,task_id=worker['task']['id'],role=worker['role'],
+               phase=phase,state=state,reason=reason,step=worker['step'])
+
     def normalize(state):
         history, question = r.execution.history, r.execution.question
         call = lambda m:request(state,'research-query','coordinator',m,'query_rewrite' if history else 'query_translation',512,(7,8704))
@@ -231,6 +236,8 @@ def build_research_graph(runtime, saver):
         update = {'requirements':requirements,'tasks':tasks,'workers':workers}
         save({**state,**update},'gather')
         r.emit('coordinate','completed',role='coordinator',tasks=tasks,requirements=requirements)
+        for worker in workers.values():
+            task_event(worker,'main','waiting','dependency_pending' if worker['dependencies'] else 'ready')
         return update
 
     def dispatch(state):
@@ -246,7 +253,9 @@ def build_research_graph(runtime, saver):
         w['step'] += 1
         if w['step'] > (2 if phase == 'rework' else 4):
             w['done'] = True
+            task_event(w,phase,'completed','decision_limit')
             return {'workers':{w['role']:w}}
+        task_event(w,phase,'running','decision_started')
         # Preserve source pages after a dependency; reports remain untrusted.
         if w['step'] == 1 and w['dependencies']:
             prior = read_json(path).get('workers',{})
@@ -261,11 +270,17 @@ def build_research_graph(runtime, saver):
             w['messages'].append({'role':'assistant',**response})
             if not w['pending']:
                 w.update(done=True,findings=response.get('content') or '')
+                task_event(w,phase,'completed','evidence_finished')
         except TaskStopped as exc:
             if str(exc) in ('worker_request_limit','request_limit','output_token_limit'):
                 w.update(done=True,findings='Use actual pages already received; no extra summary request.')
+                task_event(w,phase,'completed',str(exc))
             else:
                 w.update(done=True,failed=str(exc))
+                task_event(w,phase,'failed',str(exc))
+        except (ValueError,KeyError,TypeError):
+            task_event(w,phase,'failed','invalid_answer_or_evidence')
+            raise
         return {'workers':{w['role']:w}}
 
     def tools(state):
@@ -279,16 +294,21 @@ def build_research_graph(runtime, saver):
                     params = json.loads(f.get('arguments',''))
                 except (TypeError,ValueError):
                     params = None
-                result = r.tool(f'research-{phase}-{role}-{w["step"]}-tool{i}',role,f.get('name'),params,phase,
-                                limits={'searches':6 if phase=='rework' else 5,'pages':10 if phase=='rework' else 8})
+                try:
+                    result = r.tool(f'research-{phase}-{role}-{w["step"]}-tool{i}',role,f.get('name'),params,phase,
+                                    limits={'searches':6 if phase=='rework' else 5,'pages':10 if phase=='rework' else 8})
+                except TaskStopped as exc:
+                    task_event(w,phase,'failed',str(exc))
+                    raise
                 w['messages'].append({'role':'tool','tool_call_id':call.get('id',''),'content':json.dumps(result,ensure_ascii=False)})
                 if f.get('name')=='read_page' and result.get('status')=='read':
                     pid = result['page_id']
                     if pid not in w['read_ids']:
                         w['read_ids'].append(pid)
                         w['messages'].append({'evidence_page_id':pid})
-            if w['step'] >= (2 if phase=='rework' else 4):
+            if not w['done'] and w['step'] >= (2 if phase=='rework' else 4):
                 w['done'] = True
+                task_event(w,phase,'completed','decision_limit')
             w['candidate_facts'] = candidate_facts(w,r.execution.mapping)
             updates[role] = w
         save({**state,'workers':updates},'gather' if phase=='main' else 'rework_gather')
@@ -305,6 +325,7 @@ def build_research_graph(runtime, saver):
             for role,w in state['workers'].items():
                 if not w['done']:
                     updates[role] = dict(w,done=True,failed='blocked',blocked=True)
+                    task_event(w,state['phase'],'blocked',failure)
         save({**state,'workers':{**state['workers'],**updates}},'gather_failed' if failure else 'analyze')
         return {'workers':updates, **({'reason':failure} if failure else {})}
 
@@ -398,6 +419,8 @@ def build_research_graph(runtime, saver):
         record = {'triggered':True,'retrieval':bool(issue),'task_id':issue['task_id'] if issue else None}
         save({**state,'workers':updates,'version':1,'rework':record,'phase':'rework'},'rework')
         r.emit('research_rework','started',role='coordinator',**record)
+        if issue:
+            task_event(w,'rework','waiting','rework_requested')
         return {'workers':updates,'version':1,'rework':record,'phase':'rework'}
 
     def finish(state):
@@ -442,7 +465,8 @@ def research_result(runtime, result, state):
     research['verification_status'] = research.get('verification_status','incomplete') if result['completed'] else 'incomplete'
     research['failure_stage'] = None if result['completed'] else research.get('stage','normalize')
     research['drafts'] = [read_json(p) for p in sorted(runtime.root.glob('draft-v*.json'))]
-    research['verifications'] = [read_json(p) for p in sorted(runtime.root.glob('verification-v*.json'))]
+    research['verifications'] = [{**read_json(p),'version':int(p.stem.rsplit('v',1)[1])}
+                                 for p in sorted(runtime.root.glob('verification-v*.json'))]
     records = []
     for pid,page in sorted(runtime.execution.read.items()):
         records.append({**page,'received_by':[role for role,w in state.get('workers',{}).items() if pid in w['read_ids']],

@@ -72,6 +72,18 @@ class ResearchTests(unittest.TestCase):
             self.assertIn('base64',json.dumps(next(c for c in p.inputs if c['context']['node']==node)['messages']))
         self.assertNotIn('base64',json.dumps(value))
         self.assertEqual(read_json(self.root/'task'/'final-evidence.json')['page_ids'],['p1','p2'])
+        events = [e for e in value['progress'] if e['event']=='research_task']
+        for role,task_id in [('worker-1','t1'),('worker-2','t2')]:
+            rows = [e for e in events if e['role']==role]
+            self.assertEqual([e['state'] for e in rows],['waiting','running','running','running','completed'])
+            self.assertEqual(rows[-1]['reason'],'evidence_finished')
+            self.assertTrue(all(e['task_id']==task_id and e['phase']=='main' and e['status']==e['state'] for e in rows))
+            first_response = next(e for e in value['progress'] if e.get('node')==f'research-main-{role}-1'
+                                  and e['event']=='model_request' and e['status']=='completed')
+            self.assertLess(first_response['sequence'],rows[2]['sequence'])
+            self.assertLess(rows[2]['sequence'],rows[-1]['sequence'])
+        self.assertEqual(value['research']['verifications'][0]['version'],0)
+        self.assertNotIn('version',read_json(self.root/'task'/'verification-v0.json'))
 
     def test_research_dependency_is_sequential_and_owned(self):
         p = ResearchProvider(lambda c,m,n:{'content':json.dumps(plan(True))} if c['node']=='research-plan' else None)
@@ -80,6 +92,13 @@ class ResearchTests(unittest.TestCase):
         nodes = [c['context']['node'] for c in p.inputs]
         self.assertLess(nodes.index('research-main-worker-1-3'),nodes.index('research-main-worker-2-1'))
         self.assertEqual(p.active['peak'],1)
+        events = [e for e in value['progress'] if e['event']=='research_task']
+        waiting = next(e for e in events if e['role']=='worker-2' and e['state']=='waiting')
+        finished = next(e for e in events if e['role']=='worker-1' and e['state']=='completed')
+        started = next(e for e in events if e['role']=='worker-2' and e['state']=='running')
+        self.assertEqual(waiting['reason'],'dependency_pending')
+        self.assertLess(waiting['sequence'],finished['sequence'])
+        self.assertLess(finished['sequence'],started['sequence'])
 
     def test_research_analysis_only_rework_and_no_free_final_rewrite(self):
         issue = dict(requirement_id='r1',task_id='t1',kind='condition',detail='Preserve the survey period',needs_retrieval=False)
@@ -91,6 +110,7 @@ class ResearchTests(unittest.TestCase):
         self.assertFalse(value['research']['rework']['retrieval'])
         self.assertEqual(value['actual_model_requests'],11)
         self.assertEqual(p.inputs[-1]['context']['node'],'research-verify-v1')
+        self.assertFalse(any(e['event']=='research_task' and e['phase']=='rework' for e in value['progress']))
 
     def test_research_retrieval_rework_two_calls_then_analysis(self):
         issue = dict(requirement_id='r1',task_id='t1',kind='missing_evidence',detail='Missing survey scope',
@@ -108,6 +128,12 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual(value['actual_model_requests'],13)
         self.assertNotIn('research-rework-worker-1-3',p.counts)
         self.assertEqual(len(value['research']['verifications']),2)
+        self.assertEqual([v['version'] for v in value['research']['verifications']],[0,1])
+        events = [e for e in value['progress'] if e['event']=='research_task' and e['phase']=='rework']
+        self.assertEqual([e['state'] for e in events],['waiting','running','running','completed'])
+        self.assertTrue(all(e['role']=='worker-1' and e['task_id']=='t1' for e in events))
+        self.assertEqual(events[0]['reason'],'rework_requested')
+        self.assertEqual(events[-1]['reason'],'decision_limit')
 
     def test_research_no_rework_prunes_without_rewriting(self):
         p = ResearchProvider(lambda c,m,n:{'content':json.dumps(verification(0,supported=False))}
@@ -165,6 +191,25 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual(result['termination_reason'],'api_timeout')
         self.assertTrue(result['research']['workers']['worker-2']['blocked'])
         self.assertFalse(any('worker-2' in k for k in p.counts))
+        events = [e for e in result['progress'] if e['event']=='research_task']
+        self.assertEqual([(e['role'],e['state'],e['reason']) for e in events[-2:]],
+                         [('worker-1','failed','api_timeout'),('worker-2','blocked','api_timeout')])
+        self.assertFalse(any(e['state']=='completed' for e in events))
+
+    def test_research_invalid_worker_output_emits_failure_without_repair(self):
+        def script(c,m,n):
+            if c['node']=='research-plan':
+                return {'content':json.dumps(plan(True))}
+            if c['node']=='research-main-worker-1-1':
+                return {'content':'','tool_calls':[{'function':'invalid'}]}
+        p = ResearchProvider(script)
+        result = self.run_task(p)
+        self.assertFalse(result['completed'])
+        self.assertEqual(result['termination_reason'],'invalid_answer_or_evidence')
+        events = [e for e in result['progress'] if e['event']=='research_task']
+        self.assertEqual((events[-1]['state'],events[-1]['reason']),('failed','invalid_answer_or_evidence'))
+        self.assertEqual(p.counts['research-main-worker-1-1'],1)
+        self.assertFalse(any('worker-2' in k for k in p.counts))
 
     def test_research_original_unread_citation_rejected(self):
         def script(c,m,n):
@@ -191,6 +236,10 @@ class ResearchTests(unittest.TestCase):
         self.assertTrue(result['completed'],result)
         self.assertEqual(result['actual_model_requests'],16)
         self.assertEqual(result['searches'],5)
+        events = [e for e in result['progress'] if e['event']=='research_task' and e['phase']=='main'
+                  and e['state']=='completed']
+        self.assertEqual(len(events),2)
+        self.assertTrue(all(e['reason']=='decision_limit' for e in events))
 
     def test_research_shared_page_is_not_new_page_or_new_permission(self):
         def script(c,m,n):
