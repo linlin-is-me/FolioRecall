@@ -329,7 +329,7 @@ def serve_demo(folder, teacher_config, query_config, port=7860, output=None, ret
                        window.__folioCitationNavigation = true;
                        document.addEventListener('click', (event) => {
                          const link = event.target instanceof Element
-                           ? event.target.closest('#answer-panel a.fr-citation[href^="#qa-page-"]') : null;
+                           ? event.target.closest('#answer-panel a:is(.fr-citation,.fr-evidence-link)[href^="#qa-page-"]') : null;
                          if (!link) return;
                          const panel = link.closest('#answer-panel');
                          let id;

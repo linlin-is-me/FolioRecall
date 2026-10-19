@@ -47,7 +47,7 @@ class DemoTests(unittest.TestCase):
             # The actual launch receives the panel-scoped handler; href fallback
             # and Unicode fragment matching remain covered by the render test.
             javascript = launches[0]['js']
-            self.assertIn('#answer-panel a.fr-citation[href^="#qa-page-"]',javascript)
+            self.assertIn('#answer-panel a:is(.fr-citation,.fr-evidence-link)[href^="#qa-page-"]',javascript)
             self.assertIn('!panel.contains(target)',javascript)
             self.assertIn('event.preventDefault()',javascript)
             self.assertIn('event.stopPropagation()',javascript)
