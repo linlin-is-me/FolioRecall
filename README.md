@@ -10,8 +10,8 @@ FolioRecall combines visual retrieval and BM25 for documents containing text, ta
 
 The interface uses white cards, a light-gray background and green accents. Task cards show distinct responsibilities, dependencies and execution state; page records identify tasks with successful page reads, and verification panels preserve draft versions, issues and rework outcomes. A successful read tool does not establish that a subsequent evidence-agent request received the page image.
 
-> The local `0.1.0` review candidate integrates multi-turn QA, collaboration views, four offline cases and the ONNX FP32 query backend. Updated source has not been pushed and assets have not been published.
-> [Candidate review](doc/v0.1.0发布说明.md) · [Complete quick start](doc/v0.1.0快速开始.md)
+> **v0.1.0** integrates multi-turn QA, collaboration views, four offline cases and the ONNX FP32 query backend.
+> [GitHub Release and downloads](https://github.com/linlin-is-me/FolioRecall/releases/tag/v0.1.0) · [Release notes](doc/v0.1.0发布说明.md) · [Complete quick start](doc/v0.1.0快速开始.md)
 
 The historical method at `6fe8d8c` completed 60 live comparison/ablation attempts, 60 assistant reviews and six installed-wheel browser confirmations. This presentation update reuses those records; the current candidate uses real retrieval with a simulated generator for integration checks, with no new API calls or evaluation. Research demonstrates collaborative execution; single-Agent remains the recommended fast path because overall coverage did not improve. [Historical live results](doc/首版使用与评测.md#multi-agent-research-results) · [Current presentation checks](doc/首版使用与评测.md#agent-showcase)
 
@@ -78,9 +78,9 @@ In the earlier basic-workflow comparison, 18 turns per arm had assistant-reviewe
 
 ## Quick start
 
-**Start with the collaboration cases:** open `showcase/index.html` in the local candidate to inspect four historical live records, their tasks, source pages and verification. This entry needs no Python installation, model or API key. Assets have not been publicly released; see the [local review entry](doc/v0.1.0发布说明.md).
+**Start with the collaboration cases:** download the [complete bundle](https://github.com/linlin-is-me/FolioRecall/releases/download/v0.1.0/foliorecall-0.1.0-research-review.zip), extract it and open `package/showcase/index.html` to inspect four historical live records, their tasks, source pages and verification. This entry needs no Python installation, model or API key. The archive retains its reviewed candidate filename.
 
-Tested on Python 3.10 and Ubuntu 22.04 / WSL 2. Obtain the local wheel, `demo-bundle.zip` and `query-onnx-fp32.zip`. The 42-page demo includes vectors, previews, text and BM25. The separate model asset contains the complete query student; no GPU, teacher weights or index rebuilding is required.
+Tested on Python 3.10 and Ubuntu 22.04 / WSL 2. For selected downloads, obtain the [wheel](https://github.com/linlin-is-me/FolioRecall/releases/download/v0.1.0/foliorecall-0.1.0-py3-none-any.whl), [42-page demo](https://github.com/linlin-is-me/FolioRecall/releases/download/v0.1.0/demo-bundle.zip) and [ONNX FP32 model](https://github.com/linlin-is-me/FolioRecall/releases/download/v0.1.0/query-onnx-fp32.zip). The demo includes vectors, previews, text and BM25. No GPU, teacher weights or index rebuilding is required. The [int8 model](https://github.com/linlin-is-me/FolioRecall/releases/download/v0.1.0/query-onnx-int8.zip) is optional.
 
 From the asset directory (an existing compatible dependency environment can be reused):
 

@@ -10,8 +10,8 @@ FolioRecall结合视觉检索与BM25，处理含文字、表格和图表的文�
 
 界面使用白色卡片、浅灰背景和绿色强调色。任务卡显示不同取证责任、依赖与运行状态，原页列表标明成功读页的任务，核验区保留各版草稿、问题和返工结果。读页工具成功不等于取证模型随后已收到该页图像。
 
-> `0.1.0`本地审核候选整合了多轮问答、协作视图、四份离线案例和ONNX FP32查询后端。新版源码尚未推送，附件尚未发布。
-> [候选与审核入口](doc/v0.1.0发布说明.md) · [完整快速开始](doc/v0.1.0快速开始.md)
+> **v0.1.0** 整合了多轮问答、协作视图、四份离线案例和ONNX FP32查询后端。
+> [GitHub Release与下载](https://github.com/linlin-is-me/FolioRecall/releases/tag/v0.1.0) · [发布说明](doc/v0.1.0发布说明.md) · [完整快速开始](doc/v0.1.0快速开始.md)
 
 历史方法 `6fe8d8c` 完成60次真实对照及消融、60份助手评审和六次安装态浏览器确认。本轮展示更新复用这些记录，当前候选以真实检索配模拟生成器验证装配，没有新增API调用或重新评测。研究模式用于展示协作工程，快速问答仍推荐单Agent；整体覆盖未改善。[历史真实结果](doc/首版使用与评测.md#multi-agent-research-results) · [当前展示验证](doc/首版使用与评测.md#agent-showcase)
 
@@ -76,9 +76,9 @@ LangGraph提供图执行、分支调度和检查点接口，本项目实现任�
 
 ## 快速体验
 
-**先看协作案例：** 取得本地候选后，直接打开 `showcase/index.html`，选择四份历史真实案例查看任务、原页和核验过程。此入口不需要安装Python、加载模型或配置API。附件尚未公开发布，获取位置见[本地审核入口](doc/v0.1.0发布说明.md)。
+**先看协作案例：** 下载[完整交付包](https://github.com/linlin-is-me/FolioRecall/releases/download/v0.1.0/foliorecall-0.1.0-research-review.zip)，解压后打开 `package/showcase/index.html`，选择四份历史真实案例查看任务、原页和核验过程。此入口不需要安装Python、加载模型或配置API。压缩包沿用审核时的文件名。
 
-已验证 Python 3.10、Ubuntu 22.04／WSL 2。取得本地候选 wheel、`demo-bundle.zip` 和 `query-onnx-fp32.zip`。42 页示例包含向量、预览、正文和 BM25；独立模型附件提供完整查询学生，无需 GPU、教师权重或重新建库。
+已验证 Python 3.10、Ubuntu 22.04／WSL 2。也可分项下载 [wheel](https://github.com/linlin-is-me/FolioRecall/releases/download/v0.1.0/foliorecall-0.1.0-py3-none-any.whl)、[42页示例](https://github.com/linlin-is-me/FolioRecall/releases/download/v0.1.0/demo-bundle.zip)和[ONNX FP32模型](https://github.com/linlin-is-me/FolioRecall/releases/download/v0.1.0/query-onnx-fp32.zip)。示例包含向量、预览、正文和BM25；独立模型附件提供完整查询学生，无需GPU、教师权重或重新建库。[int8模型](https://github.com/linlin-is-me/FolioRecall/releases/download/v0.1.0/query-onnx-int8.zip)为可选附件。
 
 在附件目录执行，已有相同依赖环境可复用：
 
